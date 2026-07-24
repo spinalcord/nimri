@@ -1,0 +1,31 @@
+# Nim compiler outputs and cache
+nimcache/
+.nimcache/
+*.exe
+*.dll
+*.so
+*.dylib
+/main
+/bin/
+/tests/test_frontend_rpc
+/tests/test_frontend_e2e
+main
+# Frontend dependencies, build output, and tool caches
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.svelte-kit/
+
+# Local environment and editor files
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+
+# Ai Stuff
+AGENTS.md
+.agents/*
