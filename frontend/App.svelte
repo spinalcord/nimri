@@ -1,23 +1,27 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { greet } from './commands/greeting';
+  import { loadGreeting } from './commands/greeting';
 
   let name = 'Mara';
-  let greeting = 'Press The Button to Change this text';
-  let count: number = 0;
+  let greeting = '';
+  let loading = false;
 
-
-  async function refreshGreeting() {
-    greeting = (await greet(name)).some_message;
+  async function load() {
+    loading = true;
+    try {
+      greeting = (await loadGreeting(name)).some_message;
+    } finally {
+      loading = false;
+    }
   }
-
-  // onMount(refreshGreeting);
 </script>
 
 <main>
-  <h1>{greeting}</h1>
+  <input bind:value={name} />
+  <button on:click={load} disabled={loading}>
+    {loading ? 'Loading…' : 'Load greeting'}
+  </button>
 
-  <button on:click={refreshGreeting}>Call Nim</button>
+  <p>{greeting}</p>
 </main>
 
 <style></style>

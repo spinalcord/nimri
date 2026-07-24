@@ -1,4 +1,4 @@
-import std/[json, options, strutils, unittest]
+import std/[asyncdispatch, json, math, options, strutils, unittest]
 import ../backend/core/frontend_rpc
 
 {.push warning[UnusedImport]: off.}
@@ -43,8 +43,50 @@ proc greetingWithDefault(name: string = "World"): string {.accessible.} =
 proc dependentDefault(first: int, second: int = first + 1): int {.accessible.} =
   second
 
+type ManualStringFuture = Future[string]
+
+proc asyncGreeting(name: string): Future[TestGreeting] {.
+    async, accessible.} =
+  await sleepAsync(1)
+  result = TestGreeting(message: "Async hello, " & name, length: name.len)
+
+proc asyncString(value: string): Future[string] {.accessible, async.} =
+  await sleepAsync(1)
+  result = value
+
+proc manualFuture(value: string): ManualStringFuture {.accessible.} =
+  result = newFuture[string]("manualFuture")
+  result.complete(value)
+
+proc asyncEvent(value: string): Future[void] {.async, accessible.} =
+  await sleepAsync(1)
+  recordedEvent = value
+
+proc failsBeforeAwait(): Future[string] {.async, accessible.} =
+  raise newException(ValueError, "Failure before await")
+
+proc failsAfterAwait(): Future[string] {.async, accessible.} =
+  await sleepAsync(1)
+  raise newException(ValueError, "Failure after await")
+
+proc invalidAsyncNumber(): Future[float] {.async, accessible.} =
+  await sleepAsync(1)
+  result = Inf
+
+proc delayedValue(value: string, delay: int): Future[string] {.
+    async, accessible.} =
+  await sleepAsync(delay)
+  result = value
+
 proc responseFor(command: string, args: JsonNode): JsonNode =
   parseJson(dispatchFrontendRequest($(%* {
+    "command": command,
+    "args": args,
+  })))
+
+proc asyncResponseFor(command: string, args: JsonNode): Future[JsonNode] {.
+    async.} =
+  result = parseJson(await dispatchFrontendRequestAsync($(%* {
     "command": command,
     "args": args,
   })))
@@ -164,3 +206,87 @@ suite "frontend RPC":
 
     check not response["ok"].getBool()
     check "Unknown frontend command" in response["error"].getStr()
+
+  test "synchronous dispatch clearly rejects asynchronous commands":
+    let response = responseFor(
+      "test_frontend_rpc.asyncString", %* {"value": "Nim"})
+
+    check not response["ok"].getBool()
+    check "is asynchronous" in response["error"].getStr()
+
+  test "asynchronous commands serialize strings and objects":
+    let stringResponse = waitFor asyncResponseFor(
+      "test_frontend_rpc.asyncString", %* {"value": "Nim"})
+    let objectResponse = waitFor asyncResponseFor(
+      "test_frontend_rpc.asyncGreeting", %* {"name": "Mara"})
+    let manualResponse = waitFor asyncResponseFor(
+      "test_frontend_rpc.manualFuture", %* {"value": "manual"})
+
+    check stringResponse["ok"].getBool()
+    check stringResponse["value"].getStr() == "Nim"
+    check objectResponse["ok"].getBool()
+    check objectResponse["value"]["message"].getStr() == "Async hello, Mara"
+    check manualResponse["value"].getStr() == "manual"
+
+  test "Future void commands serialize JSON null":
+    recordedEvent = ""
+    let response = waitFor asyncResponseFor(
+      "test_frontend_rpc.asyncEvent", %* {"value": "finished"})
+
+    check response["ok"].getBool()
+    check response["value"].kind == JNull
+    check recordedEvent == "finished"
+
+  test "asynchronous exceptions before and after await become errors":
+    let beforeResponse = waitFor asyncResponseFor(
+      "test_frontend_rpc.failsBeforeAwait", newJObject())
+    let afterResponse = waitFor asyncResponseFor(
+      "test_frontend_rpc.failsAfterAwait", newJObject())
+
+    check not beforeResponse["ok"].getBool()
+    check beforeResponse["error"].getStr() == "Failure before await"
+    check not afterResponse["ok"].getBool()
+    check afterResponse["error"].getStr() == "Failure after await"
+
+  test "asynchronous argument and serialization failures become errors":
+    let argumentResponse = waitFor asyncResponseFor(
+      "test_frontend_rpc.asyncString", %* {"value": 42})
+    let serializationResponse = waitFor asyncResponseFor(
+      "test_frontend_rpc.invalidAsyncNumber", newJObject())
+
+    check not argumentResponse["ok"].getBool()
+    check "Frontend string value expected" in
+      argumentResponse["error"].getStr()
+    check not serializationResponse["ok"].getBool()
+    check "must be finite" in serializationResponse["error"].getStr()
+
+  test "asynchronous dispatch rejects unknown commands":
+    let response = waitFor asyncResponseFor("unknown.async", newJObject())
+
+    check not response["ok"].getBool()
+    check "Unknown frontend command" in response["error"].getStr()
+
+  test "concurrent futures can finish in reverse order":
+    let
+      slower = asyncResponseFor(
+        "test_frontend_rpc.delayedValue",
+        %* {"value": "slower", "delay": 30})
+      faster = asyncResponseFor(
+        "test_frontend_rpc.delayedValue",
+        %* {"value": "faster", "delay": 1})
+    var completionOrder: seq[string]
+    slower.addCallback(proc() {.gcsafe.} =
+      {.cast(gcsafe).}:
+        completionOrder.add("slower")
+    )
+    faster.addCallback(proc() {.gcsafe.} =
+      {.cast(gcsafe).}:
+        completionOrder.add("faster")
+    )
+
+    while not slower.finished or not faster.finished:
+      poll()
+
+    check completionOrder == @["faster", "slower"]
+    check slower.read["value"].getStr() == "slower"
+    check faster.read["value"].getStr() == "faster"

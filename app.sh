@@ -28,7 +28,7 @@ esac
 
 case $mode in
   serialize|generate|run)
-    nim c main.nim
+    nim c --threads:on main.nim
     exec ./main "$mode"
     ;;
   dev)
@@ -36,7 +36,7 @@ case $mode in
     ;;
   build)
     mkdir -p bin
-    nim c -d:release -o:bin/main main.nim
+    nim c --threads:on -d:release -o:bin/main main.nim
     ./bin/main generate
     npm --prefix frontend run build
 

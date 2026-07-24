@@ -46,7 +46,7 @@ proc runApp*() =
   when defined(release):
     myWindow.rootFolder = getAppDir() / "frontend"
     myWindow.show("index.html")
-    wait()
+    runFrontendEventLoop(myWindow)
   else:
     myWindow.port = WebUiBridgePort
     let frontendDir = getAppDir() / "frontend"
@@ -63,7 +63,7 @@ proc runApp*() =
         waitForDevServer(viteProcess)
 
       myWindow.show(DevServerUrl)
-      wait()
+      runFrontendEventLoop(myWindow)
     finally:
       if viteProcess != nil:
         if viteProcess.running:

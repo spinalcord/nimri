@@ -1,4 +1,4 @@
-import std/options
+import std/[asyncdispatch, options]
 import ../../../../backend/core/frontend_rpc
 import ../models
 
@@ -12,4 +12,10 @@ proc trailing_default*(name: string = "World") {.accessible.} =
   discard
 
 proc leading_default*(first: int = 1, second: int) {.accessible.} =
+  discard
+
+proc future_string*(value: string): Future[string] {.async, accessible.} =
+  result = value
+
+proc future_void*(): Future[void] {.accessible, async.} =
   discard
