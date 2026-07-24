@@ -6,7 +6,7 @@ import ../backend/core/commands
 
 const
   ProjectRoot = currentSourcePath().parentDir.parentDir
-  MetadataPath = ProjectRoot / ".nimcache" / "frontend-rpc.json"
+  MetadataPath = ProjectRoot / ".nimcache" / "nimri-rpc.json"
   GeneratedDirectory = ProjectRoot / "frontend" / "commands"
 
 proc generatedFile(name: string): string =

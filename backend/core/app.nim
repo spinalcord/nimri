@@ -6,7 +6,7 @@ import webui
 import commands
 {.pop.}
 
-import frontend_rpc
+import nimri_rpc
 
 when not defined(release):
   import std/[net, osproc]

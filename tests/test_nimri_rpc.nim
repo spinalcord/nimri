@@ -1,9 +1,9 @@
 import std/[asyncdispatch, json, math, options, strutils, unittest]
-import ../backend/core/frontend_rpc
+import ../backend/core/nimri_rpc
 
 {.push warning[UnusedImport]: off.}
-import fixtures/frontend_rpc/first
-import fixtures/frontend_rpc/second
+import fixtures/nimri_rpc/first
+import fixtures/nimri_rpc/second
 {.pop.}
 
 type
@@ -106,7 +106,7 @@ proc asyncResponseFor(command: string, args: JsonNode): Future[JsonNode] {.
 suite "frontend RPC":
   test "registered command converts arguments and returns an object":
     let response = responseFor(
-      "test_frontend_rpc.testGreeting", %* {"name": "Mara"})
+      "test_nimri_rpc.testGreeting", %* {"name": "Mara"})
 
     check response["ok"].getBool()
     check response["value"]["message"].getStr() == "Hello, Mara"
@@ -114,7 +114,7 @@ suite "frontend RPC":
 
   test "multiple named arguments are converted":
     let response = responseFor(
-      "test_frontend_rpc.add", %* {"left": 20, "right": 22})
+      "test_nimri_rpc.add", %* {"left": 20, "right": 22})
 
     check response["ok"].getBool()
     check response["value"].getInt() == 42
@@ -122,7 +122,7 @@ suite "frontend RPC":
   test "commands without a return type produce JSON null":
     recordedEvent = ""
     let response = responseFor(
-      "test_frontend_rpc.recordEvent", %* {"alter": 32, "hello": true})
+      "test_nimri_rpc.recordEvent", %* {"alter": 32, "hello": true})
 
     check response["ok"].getBool()
     check response["value"].kind == JNull
@@ -149,7 +149,7 @@ suite "frontend RPC":
       parseJson(dispatchFrontendRequest($(%* {"command": 42})))
     let wrongArgsTypeResponse =
       parseJson(dispatchFrontendRequest($(%* {
-        "command": "test_frontend_rpc.add",
+        "command": "test_nimri_rpc.add",
         "args": [],
       })))
 
@@ -168,70 +168,70 @@ suite "frontend RPC":
 
   test "omitted args default to an empty object":
     let response = parseJson(dispatchFrontendRequest($(%* {
-      "command": "test_frontend_rpc.greetingWithDefault",
+      "command": "test_nimri_rpc.greetingWithDefault",
     })))
 
     check response["ok"].getBool()
     check response["value"].getStr() == "Hello, World"
 
   test "missing arguments are rejected":
-    let response = responseFor("test_frontend_rpc.testGreeting", newJObject())
+    let response = responseFor("test_nimri_rpc.testGreeting", newJObject())
 
     check not response["ok"].getBool()
     check "Missing required argument 'name'" in response["error"].getStr()
 
   test "missing default arguments use their Nim default":
     let response =
-      responseFor("test_frontend_rpc.greetingWithDefault", newJObject())
+      responseFor("test_nimri_rpc.greetingWithDefault", newJObject())
 
     check response["ok"].getBool()
     check response["value"].getStr() == "Hello, World"
 
   test "explicit arguments override their Nim default":
     let response = responseFor(
-      "test_frontend_rpc.greetingWithDefault", %* {"name": "Mara"})
+      "test_nimri_rpc.greetingWithDefault", %* {"name": "Mara"})
 
     check response["ok"].getBool()
     check response["value"].getStr() == "Hello, Mara"
 
   test "defaults can reference earlier parameters":
     let response = responseFor(
-      "test_frontend_rpc.dependentDefault", %* {"first": 41})
+      "test_nimri_rpc.dependentDefault", %* {"first": 41})
 
     check response["ok"].getBool()
     check response["value"].getInt() == 42
 
   test "explicit null does not activate a default":
     let response = responseFor(
-      "test_frontend_rpc.greetingWithDefault", %* {"name": nil})
+      "test_nimri_rpc.greetingWithDefault", %* {"name": nil})
 
     check not response["ok"].getBool()
     check "Frontend string value expected" in response["error"].getStr()
 
   test "wrongly typed arguments are rejected":
     let response = responseFor(
-      "test_frontend_rpc.add", %* {"left": "twenty", "right": 22})
+      "test_nimri_rpc.add", %* {"left": "twenty", "right": 22})
 
     check not response["ok"].getBool()
     check response.hasKey("error")
 
   test "command exceptions become error responses":
     let response = responseFor(
-      "test_frontend_rpc.alwaysFails", %* {"reason": "expected"})
+      "test_nimri_rpc.alwaysFails", %* {"reason": "expected"})
 
     check not response["ok"].getBool()
     check response["error"].getStr() == "Command failed: expected"
 
   test "enums use their symbols on the wire":
     let response = responseFor(
-      "test_frontend_rpc.echoMood", %* {"mood": "busy"})
+      "test_nimri_rpc.echoMood", %* {"mood": "busy"})
 
     check response["ok"].getBool()
     check response["value"].getStr() == "busy"
 
   test "nested objects, arrays, sequences, enums, and options round-trip":
     let response = responseFor(
-      "test_frontend_rpc.echoNested", %* {
+      "test_nimri_rpc.echoNested", %* {
         "arguments": {
           "values": [3, 5],
           "labels": ["nim", "svelte"],
@@ -250,7 +250,7 @@ suite "frontend RPC":
 
   test "fixed arrays reject the wrong number of values":
     let response = responseFor(
-      "test_frontend_rpc.echoNested", %* {
+      "test_nimri_rpc.echoNested", %* {
         "arguments": {
           "values": [3],
           "labels": [],
@@ -265,9 +265,9 @@ suite "frontend RPC":
 
   test "integers stay within JavaScript's safe integer range":
     let safeResponse = responseFor(
-      "test_frontend_rpc.echoInteger", %* {"value": 9007199254740991})
+      "test_nimri_rpc.echoInteger", %* {"value": 9007199254740991})
     let unsafeResponse = responseFor(
-      "test_frontend_rpc.echoInteger", %* {"value": 9007199254740992})
+      "test_nimri_rpc.echoInteger", %* {"value": 9007199254740992})
 
     check safeResponse["ok"].getBool()
     check safeResponse["value"].getBiggestInt() == 9007199254740991
@@ -276,9 +276,9 @@ suite "frontend RPC":
 
   test "options map JSON null and values":
     let noneResponse = responseFor(
-      "test_frontend_rpc.optionalLength", %* {"value": nil})
+      "test_nimri_rpc.optionalLength", %* {"value": nil})
     let someResponse = responseFor(
-      "test_frontend_rpc.optionalLength", %* {"value": "Nim"})
+      "test_nimri_rpc.optionalLength", %* {"value": "Nim"})
 
     check noneResponse["ok"].getBool()
     check noneResponse["value"].kind == JNull
@@ -300,18 +300,18 @@ suite "frontend RPC":
 
   test "synchronous dispatch clearly rejects asynchronous commands":
     let response = responseFor(
-      "test_frontend_rpc.asyncString", %* {"value": "Nim"})
+      "test_nimri_rpc.asyncString", %* {"value": "Nim"})
 
     check not response["ok"].getBool()
     check "is asynchronous" in response["error"].getStr()
 
   test "asynchronous commands serialize strings and objects":
     let stringResponse = waitFor asyncResponseFor(
-      "test_frontend_rpc.asyncString", %* {"value": "Nim"})
+      "test_nimri_rpc.asyncString", %* {"value": "Nim"})
     let objectResponse = waitFor asyncResponseFor(
-      "test_frontend_rpc.asyncGreeting", %* {"name": "Mara"})
+      "test_nimri_rpc.asyncGreeting", %* {"name": "Mara"})
     let manualResponse = waitFor asyncResponseFor(
-      "test_frontend_rpc.manualFuture", %* {"value": "manual"})
+      "test_nimri_rpc.manualFuture", %* {"value": "manual"})
 
     check stringResponse["ok"].getBool()
     check stringResponse["value"].getStr() == "Nim"
@@ -322,7 +322,7 @@ suite "frontend RPC":
   test "Future void commands serialize JSON null":
     recordedEvent = ""
     let response = waitFor asyncResponseFor(
-      "test_frontend_rpc.asyncEvent", %* {"value": "finished"})
+      "test_nimri_rpc.asyncEvent", %* {"value": "finished"})
 
     check response["ok"].getBool()
     check response["value"].kind == JNull
@@ -330,9 +330,9 @@ suite "frontend RPC":
 
   test "asynchronous exceptions before and after await become errors":
     let beforeResponse = waitFor asyncResponseFor(
-      "test_frontend_rpc.failsBeforeAwait", newJObject())
+      "test_nimri_rpc.failsBeforeAwait", newJObject())
     let afterResponse = waitFor asyncResponseFor(
-      "test_frontend_rpc.failsAfterAwait", newJObject())
+      "test_nimri_rpc.failsAfterAwait", newJObject())
 
     check not beforeResponse["ok"].getBool()
     check beforeResponse["error"].getStr() == "Failure before await"
@@ -341,9 +341,9 @@ suite "frontend RPC":
 
   test "asynchronous argument and serialization failures become errors":
     let argumentResponse = waitFor asyncResponseFor(
-      "test_frontend_rpc.asyncString", %* {"value": 42})
+      "test_nimri_rpc.asyncString", %* {"value": 42})
     let serializationResponse = waitFor asyncResponseFor(
-      "test_frontend_rpc.invalidAsyncNumber", newJObject())
+      "test_nimri_rpc.invalidAsyncNumber", newJObject())
 
     check not argumentResponse["ok"].getBool()
     check "Frontend string value expected" in
@@ -360,10 +360,10 @@ suite "frontend RPC":
   test "concurrent futures can finish in reverse order":
     let
       slower = asyncResponseFor(
-        "test_frontend_rpc.delayedValue",
+        "test_nimri_rpc.delayedValue",
         %* {"value": "slower", "delay": 30})
       faster = asyncResponseFor(
-        "test_frontend_rpc.delayedValue",
+        "test_nimri_rpc.delayedValue",
         %* {"value": "faster", "delay": 1})
     var completionOrder: seq[string]
     slower.addCallback(proc() {.gcsafe.} =

@@ -7,7 +7,7 @@ nimcache/
 *.dylib
 /main
 /bin/
-/tests/test_frontend_rpc
+/tests/test_nimri_rpc
 /tests/test_frontend_e2e
 main
 # Frontend dependencies, build output, and tool caches

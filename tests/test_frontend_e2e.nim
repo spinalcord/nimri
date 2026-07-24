@@ -7,7 +7,7 @@ import webui/bindings
 import ../backend/core/commands
 {.pop.}
 
-import ../backend/core/frontend_rpc
+import ../backend/core/nimri_rpc
 
 when not defined(release):
   import std/[net, osproc]

@@ -38,7 +38,7 @@ case $mode in
     test_dir=$(mktemp -d "${TMPDIR:-/tmp}/nimri-test.XXXXXX")
     trap 'rm -rf "$test_dir"' EXIT
 
-    for test_source in tests/test_frontend_rpc.nim \
+    for test_source in tests/test_nimri_rpc.nim \
         tests/test_frontend_bindings.nim; do
       test_name=${test_source##*/}
       test_name=${test_name%.nim}

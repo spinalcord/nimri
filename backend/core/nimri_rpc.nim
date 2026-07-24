@@ -89,11 +89,11 @@ const MaxSafeJavaScriptInteger = 9_007_199_254_740_991'i64
 const FrontendBindingsOutput {.strdefine.} = ""
 const FrontendRpcProjectRoot = currentSourcePath().parentDir.parentDir.parentDir
 const FrontendRpcMetadataPath =
-  FrontendRpcProjectRoot / ".nimcache" / "frontend-rpc.json"
+  FrontendRpcProjectRoot / ".nimcache" / "nimri-rpc.json"
 const CommandModuleTemplate = staticRead(
-  currentSourcePath().parentDir / "frontend_rpc_templates" / "command.mustache")
+  currentSourcePath().parentDir / "nimri_rpc_templates" / "command.mustache")
 const TypesTemplate = staticRead(
-  currentSourcePath().parentDir / "frontend_rpc_templates" / "types.mustache")
+  currentSourcePath().parentDir / "nimri_rpc_templates" / "types.mustache")
 
 proc registerFrontendCommand(name: string, command: FrontendCommand) =
   if frontendCommands.hasKey(name):

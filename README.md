@@ -27,7 +27,7 @@ The build output is written to `bin/main` with the compiled frontend in `bin/fro
 Create a module below `backend/commands` and mark a typed procedure with `{.accessible.}`:
 
 ```nim
-import frontend_rpc
+import nimri_rpc
 
 type Greeting* = object
   message*: string
@@ -41,7 +41,7 @@ with `accessible`:
 
 ```nim
 import std/asyncdispatch
-import frontend_rpc
+import nimri_rpc
 
 proc loadGreeting*(name: string): Future[Greeting] {.
     async, accessible.} =
@@ -81,7 +81,7 @@ Exported Nim objects, enums, sequences, fixed arrays, and optional values can be
 
 ```nim
 import std/options
-import frontend_rpc
+import nimri_rpc
 
 type
   Theme* = enum

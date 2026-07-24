@@ -1,5 +1,5 @@
 import std/[asyncdispatch, options]
-import ../../../../backend/core/frontend_rpc
+import ../../../../backend/core/nimri_rpc
 import ../models
 
 proc inspect*(profiles: array[2, Profile]): Option[Profile] {.accessible.} =
