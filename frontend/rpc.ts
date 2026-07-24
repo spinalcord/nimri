@@ -1,6 +1,4 @@
-type InvokeResponse<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: string };
+// FIX: Remove the unused RPC response type.
 
 enum BridgeResponseKind {
   Accepted = 'accepted',

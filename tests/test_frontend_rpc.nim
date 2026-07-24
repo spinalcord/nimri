@@ -14,6 +14,12 @@ type
   Mood* = enum
     calm, busy
 
+  NestedArguments* = object
+    values*: array[2, int]
+    labels*: seq[string]
+    mood*: Mood
+    optional*: Option[int]
+
 proc testGreeting(name: string): TestGreeting {.accessible.} =
   TestGreeting(message: "Hello, " & name, length: name.len)
 
@@ -30,6 +36,12 @@ proc recordEvent(alter: int, hello: bool) {.accessible.} =
 
 proc echoMood(mood: Mood): Mood {.accessible.} =
   mood
+
+proc echoNested(arguments: NestedArguments): NestedArguments {.accessible.} =
+  arguments
+
+proc echoInteger(value: int64): int64 {.accessible.} =
+  value
 
 proc optionalLength(value: Option[string]): Option[int] {.accessible.} =
   if value.isSome:
@@ -128,6 +140,40 @@ suite "frontend RPC":
     check not response["ok"].getBool()
     check response.hasKey("error")
 
+  test "invalid request shapes are rejected":
+    let nonObjectResponse =
+      parseJson(dispatchFrontendRequest("[]"))
+    let missingCommandResponse =
+      parseJson(dispatchFrontendRequest($(%* {"args": {}})))
+    let wrongCommandTypeResponse =
+      parseJson(dispatchFrontendRequest($(%* {"command": 42})))
+    let wrongArgsTypeResponse =
+      parseJson(dispatchFrontendRequest($(%* {
+        "command": "test_frontend_rpc.add",
+        "args": [],
+      })))
+
+    check not nonObjectResponse["ok"].getBool()
+    check "Request must be a JSON object" in
+      nonObjectResponse["error"].getStr()
+    check not missingCommandResponse["ok"].getBool()
+    check "Request field 'command' must be a string" in
+      missingCommandResponse["error"].getStr()
+    check not wrongCommandTypeResponse["ok"].getBool()
+    check "Request field 'command' must be a string" in
+      wrongCommandTypeResponse["error"].getStr()
+    check not wrongArgsTypeResponse["ok"].getBool()
+    check "Request field 'args' must be a JSON object" in
+      wrongArgsTypeResponse["error"].getStr()
+
+  test "omitted args default to an empty object":
+    let response = parseJson(dispatchFrontendRequest($(%* {
+      "command": "test_frontend_rpc.greetingWithDefault",
+    })))
+
+    check response["ok"].getBool()
+    check response["value"].getStr() == "Hello, World"
+
   test "missing arguments are rejected":
     let response = responseFor("test_frontend_rpc.testGreeting", newJObject())
 
@@ -182,6 +228,51 @@ suite "frontend RPC":
 
     check response["ok"].getBool()
     check response["value"].getStr() == "busy"
+
+  test "nested objects, arrays, sequences, enums, and options round-trip":
+    let response = responseFor(
+      "test_frontend_rpc.echoNested", %* {
+        "arguments": {
+          "values": [3, 5],
+          "labels": ["nim", "svelte"],
+          "mood": "busy",
+          "optional": 7,
+        },
+      })
+
+    check response["ok"].getBool()
+    check response["value"]["values"].kind == JArray
+    check response["value"]["values"][0].getInt() == 3
+    check response["value"]["values"][1].getInt() == 5
+    check response["value"]["labels"] == %*["nim", "svelte"]
+    check response["value"]["mood"].getStr() == "busy"
+    check response["value"]["optional"].getInt() == 7
+
+  test "fixed arrays reject the wrong number of values":
+    let response = responseFor(
+      "test_frontend_rpc.echoNested", %* {
+        "arguments": {
+          "values": [3],
+          "labels": [],
+          "mood": "calm",
+          "optional": nil,
+        },
+      })
+
+    check not response["ok"].getBool()
+    check "Frontend fixed array must contain exactly 2 values" in
+      response["error"].getStr()
+
+  test "integers stay within JavaScript's safe integer range":
+    let safeResponse = responseFor(
+      "test_frontend_rpc.echoInteger", %* {"value": 9007199254740991})
+    let unsafeResponse = responseFor(
+      "test_frontend_rpc.echoInteger", %* {"value": 9007199254740992})
+
+    check safeResponse["ok"].getBool()
+    check safeResponse["value"].getBiggestInt() == 9007199254740991
+    check not unsafeResponse["ok"].getBool()
+    check "safe integer range" in unsafeResponse["error"].getStr()
 
   test "options map JSON null and values":
     let noneResponse = responseFor(
