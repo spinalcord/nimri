@@ -1,5 +1,5 @@
 import std/[algorithm, macros, os, staticos, strutils]
-import frontend_rpc
+import nimri_rpc
 
 proc collectCommandModules(directory: string, modulePaths: var seq[string]) {.
     compileTime.} =

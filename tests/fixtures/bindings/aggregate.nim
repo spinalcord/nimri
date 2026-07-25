@@ -1,4 +1,4 @@
-import ../../../backend/core/frontend_rpc
+import ../../../backend/core/nimri_rpc
 
 {.push warning[UnusedImport]: off.}
 import commands/root

@@ -24,10 +24,10 @@ The build output is written to `bin/main` with the compiled frontend in `bin/fro
 
 ## Add a Nim command
 
-Create a module below `backend/commands` and mark a synchronous, typed procedure with `{.accessible.}`:
+Create a module below `backend/commands` and mark a typed procedure with `{.accessible.}`:
 
 ```nim
-import frontend_rpc
+import nimri_rpc
 
 type Greeting* = object
   message*: string
@@ -35,6 +35,23 @@ type Greeting* = object
 proc greet*(name: string): Greeting {.accessible.} =
   Greeting(message: "Hello, " & name & "!")
 ```
+
+Commands can also return a `Future[T]`. The canonical form combines `async`
+with `accessible`:
+
+```nim
+import std/asyncdispatch
+import nimri_rpc
+
+proc loadGreeting*(name: string): Future[Greeting] {.
+    async, accessible.} =
+  await sleepAsync(100)
+  result = Greeting(message: "Hello, " & name & "!")
+```
+
+Manually created `Future[T]` values are supported as well. Async commands use
+cooperative asynchronous I/O on the Nim main thread; blocking or CPU-intensive
+work should still be moved to an appropriate worker.
 
 Call Nim from Svelte:
 
@@ -64,7 +81,7 @@ Exported Nim objects, enums, sequences, fixed arrays, and optional values can be
 
 ```nim
 import std/options
-import frontend_rpc
+import nimri_rpc
 
 type
   Theme* = enum
@@ -92,13 +109,14 @@ The frontend types mirror the exported fields and command signatures, so TypeScr
 
 ## Limitations (For now)
 
-- Commands must be synchronous, normally named, non-generic procedures with explicit parameter types.
+- Commands must be normally named, non-generic procedures with explicit parameter types.
 - Supported values are strings, booleans, numeric types, enums, `Option[T]`, sequences, fixed arrays, and exported plain objects with exported fields.
 - Tuples, references, pointers, and other unsupported generic types cannot cross the RPC boundary.
 - Objects cannot use inheritance, variant fields, or default field values.
 - Integers must fit within JavaScript's safe integer range.
 - Floating-point values must be finite. `NaN`, positive infinity, and negative infinity are rejected.
-- The current command API is synchronous on the Nim side. The frontend command functions return promises because communication with the desktop bridge is asynchronous.
+- Async commands do not currently support progress, streaming, cancellation, or automatic timeouts.
+- Frontend command functions always return promises, for both synchronous and asynchronous Nim commands.
 
 ## Status
 
