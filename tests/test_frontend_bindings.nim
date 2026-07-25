@@ -20,7 +20,7 @@ suite "frontend binding generation":
     check readFile(MetadataPath) == first
 
     let metadata = parseJson(first)
-    check metadata["schemaVersion"].getInt() == 2
+    check metadata["schemaVersion"].getInt() == 3
     check metadata["commands"].len == 2
     check metadata["commands"][0]["commandKind"].getStr() == "synchronous"
     check metadata["commands"][0]["modulePath"].getStr() == "greeting"

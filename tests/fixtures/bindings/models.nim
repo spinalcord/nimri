@@ -1,4 +1,4 @@
-import std/options
+import std/[options, tables]
 
 type
   Availability* = enum
@@ -9,3 +9,8 @@ type
     availability*: Availability
     nickname*: Option[string]
     children*: seq[Profile]
+    locations*: Table[string, Location]
+
+  Location* = tuple
+    x: int
+    y: int

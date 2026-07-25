@@ -54,7 +54,21 @@ proc frontendFromJson[T](node: JsonNode, _: typedesc[T]): T =
         "Frontend fixed array must contain exactly " & $result.len & " values")
     for index in 0 ..< result.len:
       result[index] = frontendFromJson(node[index], Inner)
-  elif T is object:
+  elif T is OrderedTable:
+    type Inner = typeof(default(T)[string.default])
+    if node.kind != JObject:
+      raise newException(ValueError, "Frontend table values must be objects")
+    result = initOrderedTable[string, Inner]()
+    for key, value in node.fields:
+      result[key] = frontendFromJson(value, Inner)
+  elif T is Table:
+    type Inner = typeof(default(T)[string.default])
+    if node.kind != JObject:
+      raise newException(ValueError, "Frontend table values must be objects")
+    result = initTable[string, Inner]()
+    for key, value in node.fields:
+      result[key] = frontendFromJson(value, Inner)
+  elif T is object or T is tuple:
     if node.kind != JObject:
       raise newException(ValueError, "Frontend object values must be objects")
     for fieldName, field in fieldPairs(result):
@@ -73,7 +87,11 @@ proc frontendToJson[T](value: T): JsonNode =
       result = newJNull()
   elif T is enum:
     result = %($value)
-  elif T is object:
+  elif T is OrderedTable or T is Table:
+    result = newJObject()
+    for key, item in value:
+      result[key] = frontendToJson(item)
+  elif T is object or T is tuple:
     result = newJObject()
     for fieldName, field in fieldPairs(value):
       result[fieldName] = frontendToJson(field)

@@ -1,4 +1,9 @@
+import std/tables
 import ../../../backend/core/nimri_rpc
 
-proc invalid*(value: tuple[name: string]) {.accessible.} =
-  discard
+when defined(unsupportedTable):
+  proc invalid*(value: Table[int, string]) {.accessible.} =
+    discard
+else:
+  proc invalid*(value: (string, int)) {.accessible.} =
+    discard
