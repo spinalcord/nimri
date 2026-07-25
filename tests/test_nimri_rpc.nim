@@ -1,4 +1,4 @@
-import std/[asyncdispatch, json, math, options, strutils, unittest]
+import std/[asyncdispatch, json, math, options, strutils, tables, unittest]
 import ../backend/core/nimri_rpc
 
 {.push warning[UnusedImport]: off.}
@@ -20,6 +20,14 @@ type
     mood*: Mood
     optional*: Option[int]
 
+  TestPoint* = tuple
+    x: int
+    y: int
+
+  ContainerArguments* = object
+    points*: Table[string, seq[Option[TestPoint]]]
+    ordered*: OrderedTable[string, tuple[label: string, values: array[2, int]]]
+
 proc testGreeting(name: string): TestGreeting {.accessible.} =
   TestGreeting(message: "Hello, " & name, length: name.len)
 
@@ -39,6 +47,15 @@ proc echoMood(mood: Mood): Mood {.accessible.} =
 
 proc echoNested(arguments: NestedArguments): NestedArguments {.accessible.} =
   arguments
+
+proc echoContainers(arguments: ContainerArguments): ContainerArguments {.
+    accessible.} =
+  arguments
+
+proc echoInlineTuple(
+    value: tuple[name: string, position: TestPoint]):
+    tuple[name: string, position: TestPoint] {.accessible.} =
+  value
 
 proc echoInteger(value: int64): int64 {.accessible.} =
   value
@@ -262,6 +279,43 @@ suite "frontend RPC":
     check not response["ok"].getBool()
     check "Frontend fixed array must contain exactly 2 values" in
       response["error"].getStr()
+
+  test "tables and tuple aliases round-trip through nested containers":
+    let response = responseFor(
+      "test_nimri_rpc.echoContainers", %* {
+        "arguments": {
+          "points": {
+            "origin": [{"x": 0, "y": 0}, nil],
+          },
+          "ordered": {
+            "first": {
+              "label": "pair",
+              "values": [3, 5],
+            },
+          },
+        },
+      })
+
+    check response["ok"].getBool()
+    check response["value"]["points"]["origin"][0] == %* {"x": 0, "y": 0}
+    check response["value"]["points"]["origin"][1].kind == JNull
+    check response["value"]["ordered"]["first"]["label"].getStr() == "pair"
+    check response["value"]["ordered"]["first"]["values"] == %*[3, 5]
+
+  test "direct named tuples round-trip as JSON objects":
+    let response = responseFor(
+      "test_nimri_rpc.echoInlineTuple", %* {
+        "value": {
+          "name": "home",
+          "position": {"x": 4, "y": 7},
+        },
+      })
+
+    check response["ok"].getBool()
+    check response["value"] == %* {
+      "name": "home",
+      "position": {"x": 4, "y": 7},
+    }
 
   test "integers stay within JavaScript's safe integer range":
     let safeResponse = responseFor(
