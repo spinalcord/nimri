@@ -19,11 +19,19 @@ type
     ftkSequence
     ftkArray
     ftkOption
+    ftkTable
+    ftkTuple
 
   FrontendType = ref object
     kind: FrontendTypeKind
     name: string
     elementType: FrontendType
+    arrayLength: int
+    fields: seq[FrontendField]
+
+  FrontendField = object
+    name: string
+    fieldType: FrontendType
 
   BindingParameter = object
     nimName: string
@@ -43,10 +51,7 @@ type
   FrontendNamedTypeKind = enum
     fntObject
     fntEnum
-
-  FrontendField = object
-    name: string
-    fieldType: FrontendType
+    fntTuple
 
   TypeDeclaration = object
     identity: string
@@ -159,88 +164,6 @@ proc modulePathFor(filename: string): string {.compileTime.} =
     else:
       result = source.extractFilename.changeFileExt("")
 
-proc typeIdentity(symbol: NimNode): string {.compileTime.} =
-  let location = symbol.getImpl.lineInfoObj
-  result = location.filename.normalizedPath & ":" &
-    $location.line & ":" & symbol.strVal
-
-proc findType(identity: string): int {.compileTime.} =
-  for index, declaration in collectedTypes:
-    if declaration.identity == identity:
-      return index
-  result = -1
-
-proc ensureNamedType(typeNode: NimNode): string {.compileTime.}
-
-proc unsupportedType(typeNode: NimNode; detail = "") {.compileTime.} =
-  var message = "unsupported frontend type '" & typeNode.repr & "'"
-  if detail.len > 0:
-    message.add(": " & detail)
-  error(message, typeNode)
-
-proc frontendType(typeNode: NimNode): FrontendType {.compileTime.} =
-  if typeNode.kind == nnkEmpty:
-    return FrontendType(kind: ftkVoid)
-
-  let node =
-    if typeNode.kind == nnkVarTy: typeNode[0]
-    else: typeNode
-
-  case node.kind
-  of nnkBracketExpr:
-    let container = node[0].strVal
-    case container
-    of "seq":
-      if node.len != 2:
-        unsupportedType(node)
-      result = FrontendType(
-        kind: ftkSequence,
-        elementType: frontendType(node[1])
-      )
-    of "array":
-      if node.len != 3:
-        unsupportedType(node)
-      result = FrontendType(
-        kind: ftkArray,
-        elementType: frontendType(node[2])
-      )
-    of "Option":
-      if node.len != 2:
-        unsupportedType(node)
-      result = FrontendType(
-        kind: ftkOption,
-        elementType: frontendType(node[1])
-      )
-    else:
-      unsupportedType(node,
-        "generics are not part of the frontend binding contract")
-  of nnkSym, nnkIdent:
-    let name = node.strVal
-    case name
-    of "void":
-      result = FrontendType(kind: ftkVoid)
-    of "bool":
-      result = FrontendType(kind: ftkBoolean)
-    of "string":
-      result = FrontendType(kind: ftkString)
-    of "int", "int8", "int16", "int32", "int64",
-        "uint", "uint8", "uint16", "uint32", "uint64",
-        "Natural", "Positive", "float", "float32", "float64":
-      result = FrontendType(kind: ftkNumber)
-    else:
-      if node.kind != nnkSym:
-        unsupportedType(node, "the type could not be resolved")
-      let typeName = ensureNamedType(node)
-      result = FrontendType(kind: ftkNamed, name: typeName)
-  of nnkTupleTy, nnkTupleConstr:
-    unsupportedType(node, "tuples are not supported")
-  of nnkRefTy:
-    unsupportedType(node, "reference types are not supported")
-  of nnkPtrTy:
-    unsupportedType(node, "pointer types are not supported")
-  else:
-    unsupportedType(node)
-
 proc futureValueType(typeNode: NimNode): NimNode {.compileTime.} =
   let node =
     if typeNode.kind == nnkVarTy: typeNode[0]
@@ -257,81 +180,7 @@ proc futureValueType(typeNode: NimNode): NimNode {.compileTime.} =
 
   result = newEmptyNode()
 
-proc enumMemberName(node: NimNode): string {.compileTime.} =
-  case node.kind
-  of nnkIdent, nnkSym:
-    result = node.strVal
-  of nnkEnumFieldDef:
-    result = node[0].strVal
-  else:
-    error("unsupported enum member in frontend type", node)
-
-proc ensureNamedType(typeNode: NimNode): string {.compileTime.} =
-  let
-    identity = typeIdentity(typeNode)
-    existingIndex = findType(identity)
-
-  if existingIndex >= 0:
-    return collectedTypes[existingIndex].name
-
-  let definition = typeNode.getImpl
-  if definition.kind != nnkTypeDef:
-    unsupportedType(typeNode)
-  if not isExportedName(definition[0]):
-    error("frontend object and enum types must be exported: '" &
-      typeNode.strVal & "'", typeNode)
-
-  let
-    typeName = typeNode.strVal
-    body = definition[2]
-
-  for declaration in collectedTypes:
-    if declaration.name == typeName and declaration.identity != identity:
-      error("ambiguous frontend type name '" & typeName &
-        "' is declared in more than one module", typeNode)
-
-  # Install a placeholder first so recursive object fields terminate.
-  collectedTypes.add(TypeDeclaration(identity: identity, name: typeName))
-  let declarationIndex = collectedTypes.high
-
-  case body.kind
-  of nnkEnumTy:
-    collectedTypes[declarationIndex].kind = fntEnum
-    for index in 1 ..< body.len:
-      collectedTypes[declarationIndex].members.add(
-        enumMemberName(body[index]))
-    if collectedTypes[declarationIndex].members.len == 0:
-      error("frontend enums must contain at least one member", typeNode)
-  of nnkObjectTy:
-    collectedTypes[declarationIndex].kind = fntObject
-    if body[1].kind != nnkEmpty:
-      error("frontend objects cannot use inheritance", typeNode)
-    let fields = body[2]
-    if fields.kind != nnkRecList:
-      error("unsupported frontend object layout for '" & typeName & "'",
-        typeNode)
-
-    for field in fields:
-      if field.kind != nnkIdentDefs:
-        error("frontend objects cannot contain variants or case fields",
-          field)
-      if field[^1].kind != nnkEmpty:
-        error("frontend object fields cannot have default values", field)
-      for nameIndex in 0 ..< field.len - 2:
-        let fieldNameNode = field[nameIndex]
-        if not isExportedName(fieldNameNode):
-          error("frontend object field '" & commandName(fieldNameNode) &
-            "' must be exported", fieldNameNode)
-        let
-          fieldName = commandName(fieldNameNode)
-          fieldType = frontendType(field[^2])
-        collectedTypes[declarationIndex].fields.add(
-          FrontendField(name: fieldName, fieldType: fieldType))
-  else:
-    unsupportedType(typeNode,
-      "only exported enums and plain objects are supported as named types")
-
-  result = typeName
+include nimri_rpc/frontend_types
 
 macro collectFrontendBinding*(target: typed; modulePath, nimName,
     wireName: static[string]; commandKind: static[FrontendCommandKind]): untyped =

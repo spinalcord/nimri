@@ -13,6 +13,13 @@ export interface {{name}} {
 {{/fields}}
 }
 {{/isObject}}
+{{#isTuple}}
+export type {{name}} = {
+{{#fields}}
+  {{name}}: {{{type}}};
+{{/fields}}
+};
+{{/isTuple}}
 {{^last}}
 
 {{/last}}

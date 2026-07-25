@@ -77,10 +77,12 @@ Import the command and use it like a typed async function:
 
 ## Typed data
 
-Exported Nim objects, enums, sequences, fixed arrays, and optional values can be used in command parameters and return values:
+Exported Nim objects, enums, named tuple aliases, sequences, fixed arrays,
+string-keyed tables, and optional values can be used in command parameters and
+return values:
 
 ```nim
-import std/options
+import std/[options, tables]
 import nimri_rpc
 
 type
@@ -92,12 +94,54 @@ type
     age*: int
     theme*: Theme
 
+  Point* = tuple
+    x: int
+    y: int
+
 proc createProfile*(name: string, theme: Theme,
     nickname: Option[string]): UserProfile {.accessible.} =
   UserProfile(name: name, age: 0, theme: theme)
+
+proc saveLocations*(
+    locations: Table[string, seq[Option[Point]]],
+    bounds: array[2, Point]):
+    tuple[saved: int, primary: Option[Point]] {.accessible.} =
+  (saved: locations.len, primary: some(bounds[0]))
 ```
 
-The frontend types mirror the exported fields and command signatures, so TypeScript can catch mismatches before the app is run.
+The generated TypeScript preserves these shapes recursively. For example,
+`array[2, Point]` becomes `[Point, Point]`,
+`Table[string, seq[Option[Point]]]` becomes
+`Record<string, Array<Point | null>>`, and the direct return tuple becomes
+`{ saved: number; primary: Point | null }`.
+
+Objects and named tuples cross the wire as JSON objects using their field names.
+Both `Table[string, T]` and `OrderedTable[string, T]` also use JSON objects,
+while sequences and fixed arrays use JSON arrays. `Option[T]` uses either the
+encoded value or JSON `null`. Table ordering is not part of the RPC contract;
+`OrderedTable` intentionally uses the same object-based format as `Table`.
+
+A minimal Svelte call can pass all of these shapes through the generated,
+type-safe command binding:
+
+```svelte
+<script lang="ts">
+  import { saveLocations } from './commands/example';
+
+  let saved = 0;
+
+  async function save() {
+    const result = await saveLocations(
+      { home: [{ x: 1, y: 2 }, null] },
+      [{ x: 0, y: 0 }, { x: 10, y: 20 }]
+    );
+    saved = result.saved;
+  }
+</script>
+
+<button on:click={save}>Save locations</button>
+<p>{saved} locations saved</p>
+```
 
 ## Development commands
 
@@ -110,8 +154,13 @@ The frontend types mirror the exported fields and command signatures, so TypeScr
 ## Limitations (For now)
 
 - Commands must be normally named, non-generic procedures with explicit parameter types.
-- Supported values are strings, booleans, numeric types, enums, `Option[T]`, sequences, fixed arrays, and exported plain objects with exported fields.
-- Tuples, references, pointers, and other unsupported generic types cannot cross the RPC boundary.
+- Supported values are strings, booleans, numeric types, enums, `Option[T]`,
+  sequences, fixed arrays, `Table[string, T]`, `OrderedTable[string, T]`,
+  exported plain objects with exported fields, and tuples whose fields are all
+  named.
+- Tuple aliases used by RPC commands must be exported. Positional tuples,
+  tables with non-string keys, references, pointers, and other unsupported
+  generic types cannot cross the RPC boundary.
 - Objects cannot use inheritance, variant fields, or default field values.
 - Integers must fit within JavaScript's safe integer range.
 - Floating-point values must be finite. `NaN`, positive infinity, and negative infinity are rejected.
