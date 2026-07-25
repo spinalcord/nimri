@@ -8,11 +8,14 @@ proc frontendTypeKindName(kind: FrontendTypeKind): string =
   of ftkSequence: "sequence"
   of ftkArray: "array"
   of ftkOption: "option"
+  of ftkTable: "table"
+  of ftkTuple: "tuple"
 
 proc namedTypeKindName(kind: FrontendNamedTypeKind): string =
   case kind
   of fntObject: "object"
   of fntEnum: "enum"
+  of fntTuple: "tuple"
 
 proc commandKindName(kind: FrontendCommandKind): string =
   case kind
@@ -34,14 +37,23 @@ proc frontendTypeJson(frontendType: FrontendType): JsonNode =
   case frontendType.kind
   of ftkNamed:
     result["name"] = %frontendType.name
-  of ftkSequence, ftkArray, ftkOption:
+  of ftkSequence, ftkArray, ftkOption, ftkTable:
     result["elementType"] = frontendTypeJson(frontendType.elementType)
+    if frontendType.kind == ftkArray:
+      result["length"] = %frontendType.arrayLength
+  of ftkTuple:
+    result["fields"] = newJArray()
+    for field in frontendType.fields:
+      result["fields"].add(%* {
+        "name": field.name,
+        "type": frontendTypeJson(field.fieldType),
+      })
   else:
     discard
 
 proc frontendBindingsJson(model: FrontendBindingsModel): JsonNode =
   result = newJObject()
-  result["schemaVersion"] = %2
+  result["schemaVersion"] = %3
   result["commands"] = newJArray()
   for binding in model.commands:
     var command = newJObject()
@@ -67,7 +79,7 @@ proc frontendBindingsJson(model: FrontendBindingsModel): JsonNode =
     typeNode["name"] = %declaration.name
     typeNode["kind"] = %namedTypeKindName(declaration.kind)
     case declaration.kind
-    of fntObject:
+    of fntObject, fntTuple:
       typeNode["fields"] = newJArray()
       for field in declaration.fields:
         var fieldNode = newJObject()
@@ -173,17 +185,33 @@ proc parseFrontendType(node: JsonNode; path: string): FrontendType =
       kind: ftkNamed,
       name: requireField(node, "name", path, JString).getStr()
     )
-  of "sequence", "array", "option":
+  of "sequence", "array", "option", "table":
     let element = requireField(node, "elementType", path, JObject)
     let kind =
       case kindName
       of "sequence": ftkSequence
       of "array": ftkArray
-      else: ftkOption
+      of "option": ftkOption
+      else: ftkTable
     result = FrontendType(
       kind: kind,
       elementType: parseFrontendType(element, path & ".elementType")
     )
+    if kind == ftkArray:
+      result.arrayLength = requireField(node, "length", path, JInt).getInt()
+  of "tuple":
+    result = FrontendType(kind: ftkTuple)
+    let fields = requireField(node, "fields", path, JArray)
+    for index in 0 ..< fields.len:
+      let
+        field = fields[index]
+        fieldPath = path & ".fields[" & $index & "]"
+      result.fields.add(FrontendField(
+        name: requireField(field, "name", fieldPath, JString).getStr(),
+        fieldType: parseFrontendType(
+          requireField(field, "type", fieldPath, JObject),
+          fieldPath & ".type")
+      ))
   else:
     raise newException(ValueError,
       "Invalid frontend RPC metadata: unknown type kind '" & kindName & "'")
@@ -202,7 +230,7 @@ proc readFrontendBindingsModel(): FrontendBindingsModel =
 
   let schemaVersion = requireField(
     root, "schemaVersion", "root", JInt).getInt()
-  if schemaVersion != 2:
+  if schemaVersion != 3:
     raise newException(ValueError,
       "Unsupported frontend RPC metadata schema version " & $schemaVersion)
 
@@ -252,8 +280,10 @@ proc readFrontendBindingsModel(): FrontendBindingsModel =
       name: requireField(typeNode, "name", path, JString).getStr()
     )
     case kindName
-    of "object":
-      declaration.kind = fntObject
+    of "object", "tuple":
+      declaration.kind =
+        if kindName == "object": fntObject
+        else: fntTuple
       let fields = requireField(typeNode, "fields", path, JArray)
       for fieldIndex in 0 ..< fields.len:
         let fieldNode = fields[fieldIndex]
@@ -288,10 +318,25 @@ proc typeScriptType(frontendType: FrontendType): string =
   of ftkString: "string"
   of ftkNumber: "number"
   of ftkNamed: frontendType.name
-  of ftkSequence, ftkArray:
-    typeScriptType(frontendType.elementType) & "[]"
+  of ftkSequence:
+    "Array<" & typeScriptType(frontendType.elementType) & ">"
+  of ftkArray:
+    var elements = newSeq[string](frontendType.arrayLength)
+    for index in 0 ..< elements.len:
+      elements[index] = typeScriptType(frontendType.elementType)
+    "[" & elements.join(", ") & "]"
   of ftkOption:
     typeScriptType(frontendType.elementType) & " | null"
+  of ftkTable:
+    "Record<string, " & typeScriptType(frontendType.elementType) & ">"
+  of ftkTuple:
+    var fields: seq[string]
+    for field in frontendType.fields:
+      fields.add(field.name & ": " & typeScriptType(field.fieldType))
+    "{ " & fields.join("; ") & " }"
+
+proc validateFields(fields: seq[FrontendField]; namedTypes: HashSet[string];
+    path: string)
 
 proc validateFrontendType(frontendType: FrontendType;
     namedTypes: HashSet[string]; allowVoid: bool; path: string) =
@@ -305,11 +350,32 @@ proc validateFrontendType(frontendType: FrontendType;
       raise newException(ValueError,
         "Invalid frontend RPC metadata: unknown named type '" &
         frontendType.name & "' at " & path)
-  of ftkSequence, ftkArray, ftkOption:
+  of ftkArray:
+    if frontendType.arrayLength < 0:
+      raise newException(ValueError,
+        "Invalid frontend RPC metadata: negative array length at " & path)
     validateFrontendType(
       frontendType.elementType, namedTypes, false, path & ".elementType")
+  of ftkSequence, ftkOption, ftkTable:
+    validateFrontendType(
+      frontendType.elementType, namedTypes, false, path & ".elementType")
+  of ftkTuple:
+    validateFields(frontendType.fields, namedTypes, path & ".fields")
   else:
     discard
+
+proc validateFields(fields: seq[FrontendField]; namedTypes: HashSet[string];
+    path: string) =
+  var fieldNames = initHashSet[string]()
+  for fieldIndex, field in fields:
+    if field.name.len == 0 or field.name in fieldNames:
+      raise newException(ValueError,
+        "Invalid frontend RPC metadata: duplicate or empty field name at " &
+        path & "[" & $fieldIndex & "]")
+    fieldNames.incl(field.name)
+    validateFrontendType(
+      field.fieldType, namedTypes, false,
+      path & "[" & $fieldIndex & "].type")
 
 proc validateFrontendBindingsModel(model: FrontendBindingsModel) =
   var
@@ -327,17 +393,8 @@ proc validateFrontendBindingsModel(model: FrontendBindingsModel) =
   for typeIndex, declaration in model.types:
     let path = "types[" & $typeIndex & "]"
     case declaration.kind
-    of fntObject:
-      var fieldNames = initHashSet[string]()
-      for fieldIndex, field in declaration.fields:
-        if field.name.len == 0 or field.name in fieldNames:
-          raise newException(ValueError,
-            "Invalid frontend RPC metadata: duplicate or empty field name at " &
-            path & ".fields[" & $fieldIndex & "]")
-        fieldNames.incl(field.name)
-        validateFrontendType(
-          field.fieldType, namedTypes, false,
-          path & ".fields[" & $fieldIndex & "].type")
+    of fntObject, fntTuple:
+      validateFields(declaration.fields, namedTypes, path & ".fields")
     of fntEnum:
       if declaration.members.len == 0:
         raise newException(ValueError,
@@ -398,8 +455,11 @@ proc collectReferencedTypeNames(frontendType: FrontendType;
   of ftkNamed:
     if frontendType.name notin names:
       names.add(frontendType.name)
-  of ftkSequence, ftkArray, ftkOption:
+  of ftkSequence, ftkArray, ftkOption, ftkTable:
     collectReferencedTypeNames(frontendType.elementType, names)
+  of ftkTuple:
+    for field in frontendType.fields:
+      collectReferencedTypeNames(field.fieldType, names)
   else:
     discard
 
@@ -462,10 +522,11 @@ proc renderTypesFile(types: seq[TypeDeclaration]): string =
       "name": declaration.name,
       "isObject": declaration.kind == fntObject,
       "isEnum": declaration.kind == fntEnum,
+      "isTuple": declaration.kind == fntTuple,
       "last": typeIndex == types.high,
     }
     case declaration.kind
-    of fntObject:
+    of fntObject, fntTuple:
       typeView["fields"] = newJArray()
       for field in declaration.fields:
         typeView["fields"].add(%* {
@@ -532,4 +593,3 @@ macro defineFrontendBindings*(): untyped =
 
     proc generateFrontendBindings*() =
       generateFrontendFiles()
-
