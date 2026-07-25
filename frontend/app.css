@@ -1,0 +1,85 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #101524;
+  color: #edf1ff;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+}
+
+.app-header {
+  margin-bottom: 2rem;
+}
+
+.app-header h1 {
+  margin: .2rem 0 .5rem;
+  font-size: clamp(2rem, 6vw, 3.5rem);
+}
+
+.app-description {
+  color: #b7c0da;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #8fbcff;
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.greeting {
+  max-width: 420px;
+}
+
+.greeting-card {
+  padding: 1.5rem;
+  border: 1px solid #303a58;
+  border-radius: 1rem;
+  background: #181f33;
+}
+
+.greeting-card label {
+  display: grid;
+  gap: .4rem;
+  margin: 1rem 0;
+  font-size: .9rem;
+}
+
+.greeting-card input {
+  min-width: 0;
+  padding: .6rem .75rem;
+  border: 1px solid #4a5679;
+  border-radius: .5rem;
+  background: #0e1424;
+  color: inherit;
+}
+
+.greeting-card input {
+  width: 100%;
+}
+
+.greeting-card button {
+  padding: .65rem .8rem;
+  border: 0;
+  border-radius: .5rem;
+  background: #8fbcff;
+  color: #101524;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.greeting-card output {
+  display: block;
+  margin-top: 1rem;
+  color: #c6f6d5;
+}

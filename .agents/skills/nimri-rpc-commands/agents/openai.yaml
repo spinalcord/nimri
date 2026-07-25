@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nimri RPC Commands"
+  short_description: "Create typed Nim commands for Svelte"
+  default_prompt: "Use $nimri-rpc-commands to add or revise a Nimri RPC command."

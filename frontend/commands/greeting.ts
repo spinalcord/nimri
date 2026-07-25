@@ -5,7 +5,3 @@ import { invoke } from '../rpc';
 export function greet(name: string): Promise<Greeting> {
   return invoke<Greeting>('greeting.greet', { name });
 }
-
-export function loadGreeting(name: string): Promise<Greeting> {
-  return invoke<Greeting>('greeting.loadGreeting', { name });
-}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nimri RPC Types"
+  short_description: "Work safely with Nimri RPC data types"
+  default_prompt: "Use $nimri-rpc-types to design or review Nimri RPC data contracts."

@@ -21,14 +21,12 @@ suite "frontend binding generation":
 
     let metadata = parseJson(first)
     check metadata["schemaVersion"].getInt() == 3
-    check metadata["commands"].len == 2
+    check metadata["commands"].len == 1
     check metadata["commands"][0]["commandKind"].getStr() == "synchronous"
     check metadata["commands"][0]["modulePath"].getStr() == "greeting"
-    check metadata["commands"][0]["wireName"].getStr() == "greeting.greet"
-    check metadata["commands"][1]["commandKind"].getStr() == "asynchronous"
-    check metadata["commands"][1]["nimName"].getStr() == "loadGreeting"
-    check metadata["commands"][1]["wireName"].getStr() ==
-      "greeting.loadGreeting"
+    check metadata["commands"][0]["wireName"].getStr() ==
+      "greeting.greet"
+    check metadata["commands"][0]["nimName"].getStr() == "greet"
     check metadata["commands"][0]["parameters"][0]["type"]["kind"].getStr() ==
       "string"
     check metadata["commands"][0]["returnType"]["kind"].getStr() == "named"
@@ -51,6 +49,4 @@ suite "frontend binding generation":
     let commands = generatedFile("greeting.ts")
 
     check "invoke<Greeting>('greeting.greet', { name })" in commands
-    check "invoke<Greeting>('greeting.loadGreeting', { name })" in commands
     check "greet(name: string): Promise<Greeting>" in commands
-    check "loadGreeting(name: string): Promise<Greeting>" in commands

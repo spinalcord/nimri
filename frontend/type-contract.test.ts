@@ -1,4 +1,4 @@
-import { greet } from './commands/greeting';
+import { greet } from 'commands/greeting';
 
 void greet('Mara');
 

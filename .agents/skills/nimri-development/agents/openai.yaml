@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nimri Development"
+  short_description: "Run, test, and build Nimri projects"
+  default_prompt: "Use $nimri-development to run, test, or build this Nimri project."

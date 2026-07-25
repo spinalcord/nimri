@@ -1,27 +1,15 @@
 <script lang="ts">
-  import { loadGreeting } from './commands/greeting';
-
-  let name = 'Mara';
-  let greeting = '';
-  let loading = false;
-
-  async function load() {
-    loading = true;
-    try {
-      greeting = (await loadGreeting(name)).some_message;
-    } finally {
-      loading = false;
-    }
-  }
+  import Greeting from './Greeting.svelte';
 </script>
 
-<main>
-  <input bind:value={name} />
-  <button on:click={load} disabled={loading}>
-    {loading ? 'Loading…' : 'Load greeting'}
-  </button>
+<main class="app">
+  <header class="app-header">
+    <p class="eyebrow">Nimri framework</p>
+    <h1>Greeting</h1>
+    <p class="app-description">A generated, type-safe binding from Svelte to Nim.</p>
+  </header>
 
-  <p>{greeting}</p>
+  <section class="greeting" aria-label="Greeting">
+    <Greeting />
+  </section>
 </main>
-
-<style></style>
