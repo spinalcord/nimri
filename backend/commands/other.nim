@@ -1,11 +1,9 @@
 import nimri_rpc
-import other
+import ../abc
 
 type
   someType* = object
     hey*: string
 
-
 proc abctest*(something: someType): string {.accessible.} =
   "test"
-

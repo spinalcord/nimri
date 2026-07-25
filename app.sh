@@ -52,11 +52,16 @@ case $mode in
     ;;
   build)
     mkdir -p bin
-    nim c --threads:on -d:release -o:bin/main main.nim
-    ./bin/main generate
+    rm -rf bin/frontend
+    build_dir=$(mktemp -d "${TMPDIR:-/tmp}/nimri-build.XXXXXX")
+    trap 'rm -rf "$build_dir"' EXIT
+
+    nim c --threads:on --nimcache:"$build_dir/nimcache-bootstrap" \
+      -o:"$build_dir/main" main.nim
+    "$build_dir/main" generate
     npm --prefix frontend run build
 
-    rm -rf bin/frontend
-    cp -R frontend/dist bin/frontend
+    nim c --threads:on -d:release --nimcache:"$build_dir/nimcache-release" \
+      -o:bin/main main.nim
     ;;
 esac

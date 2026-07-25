@@ -24,7 +24,7 @@ The development command compiles the Nim application, starts Vite, and opens the
 ./app.sh build
 ```
 
-The build output is written to `bin/main` with the compiled frontend in `bin/frontend`.
+The build output is written to `bin/main`. The compiled frontend is embedded in the binary.
 
 ## Add a Nim command
 
@@ -40,9 +40,7 @@ proc greet*(name: string): Greeting {.accessible.} =
   Greeting(message: "Hello, " & name & "!")
 ```
 
-Call Nim from Svelte:
-
-Import the command and use it like a typed async function:
+Do `./app.sh generate` And call Nim from Svelte:
 
 ```html
 <script lang="ts">
@@ -67,8 +65,11 @@ Import the command and use it like a typed async function:
 ```sh
 ./app.sh run        # Run the app
 ./app.sh dev        # Start the development workflow
+./app.sh generate   # Generates RPC Type Script files
+./app.sh serialize  # Serialize Methods/Types to Json (Only for framework developement)
 ./app.sh build      # Create a release build
 ```
+
 
 ## Limitations (For now)
 

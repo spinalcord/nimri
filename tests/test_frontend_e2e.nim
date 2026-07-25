@@ -1,4 +1,4 @@
-import std/[asyncdispatch, json, os, strutils]
+import std/[asyncdispatch, json, strutils]
 import webui
 import webui/bindings
 
@@ -10,17 +10,20 @@ import ../backend/core/commands
 import ../backend/core/nimri_rpc
 
 when not defined(release):
-  import std/[net, osproc]
+  import std/[net, os, osproc]
+
+when defined(release):
+  import ../backend/core/embedded_frontend_assets
 
 const
-  ProjectRoot = currentSourcePath().parentDir.parentDir
-  FrontendDir = ProjectRoot / "frontend"
   WebUiBridgePort = 7681
   ExpectedGreeting = "Hello, Mara – directly from Nim!"
   ExpectedAsyncValue = "Async RPC completed"
 
 when not defined(release):
   const
+    ProjectRoot = currentSourcePath().parentDir.parentDir
+    FrontendDir = ProjectRoot / "frontend"
     DevServerHost = "127.0.0.1"
     DevServerPort = 5173
 
@@ -55,7 +58,9 @@ window.port = WebUiBridgePort
 bindFrontendCommands(window)
 
 when defined(release):
-  window.rootFolder = FrontendDir / "dist"
+  window.fileHandler = proc(filename: string): string =
+    let urlPath = if filename.startsWith('/'): filename else: "/" & filename
+    embeddedFrontendAsset(urlPath)
   doAssert window.show("index.html", bindings.Browsers.Chromium),
     "WebUI could not open the release frontend"
 else:
@@ -91,7 +96,7 @@ proc verifyFrontend(): Future[void] {.async.} =
     var renderedGreeting = ""
     for _ in 0 ..< 50:
       let response = window.script(
-        "return document.querySelector('h1')?.textContent ?? '';",
+        "return document.body.textContent ?? '';",
         timeout = 2
       )
       if not response.error:

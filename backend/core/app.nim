@@ -1,4 +1,3 @@
-import std/os
 import webui
 
 # Importing the aggregator initializes every frontend command registration.
@@ -8,8 +7,12 @@ import commands
 
 import nimri_rpc
 
+when defined(release):
+  import std/strutils
+  import embedded_frontend_assets
+
 when not defined(release):
-  import std/[net, osproc]
+  import std/[net, os, osproc]
 
   const
     DevServerHost = "127.0.0.1"
@@ -44,7 +47,9 @@ proc runApp*() =
   bindFrontendCommands(myWindow)
 
   when defined(release):
-    myWindow.rootFolder = getAppDir() / "frontend"
+    myWindow.fileHandler = proc(filename: string): string =
+      let urlPath = if filename.startsWith('/'): filename else: "/" & filename
+      embeddedFrontendAsset(urlPath)
     myWindow.show("index.html")
     runFrontendEventLoop(myWindow)
   else:
