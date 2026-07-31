@@ -1,5 +1,5 @@
 import std/os
-import backend/core/[app, commands]
+import backend/core/[app, rpc_registry]
 
 when isMainModule:
   let arguments = commandLineParams()

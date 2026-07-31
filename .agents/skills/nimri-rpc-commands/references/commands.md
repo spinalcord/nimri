@@ -25,7 +25,7 @@ proc validateName*(name: string): string {.accessible.} =
 
 ```svelte
 <script lang="ts">
-  import { greet } from 'commands/greeting';
+  import { greet } from 'rpc/commands/greeting';
   const greeting = await greet('Mara');
 </script>
 ```

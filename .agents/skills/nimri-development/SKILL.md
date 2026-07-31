@@ -20,7 +20,7 @@ Run `app.sh` from the repository root.
 
 ## Workflow
 
-After changing an accessible command or RPC type, use `./app.sh generate` to refresh bindings (this step automatically serializes and then generates).
+After changing an accessible command or RPC type, use `./app.sh dev` to refresh bindings and run the application. Use `serialize` or `generate` only for an explicit intermediate step.
 
 ## CRITICAL
 Use `/app.sh test` ONLY IF you maintain core nimri framework. You don't have to use this command during app development.

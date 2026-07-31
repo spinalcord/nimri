@@ -1,13 +1,13 @@
 import std/[json, os, strutils, unittest]
 
 {.push warning[UnusedImport]: off.}
-import ../backend/core/commands
+import ../backend/core/rpc_registry
 {.pop.}
 
 const
   ProjectRoot = currentSourcePath().parentDir.parentDir
   MetadataPath = ProjectRoot / ".nimcache" / "nimri-rpc.json"
-  GeneratedDirectory = ProjectRoot / "frontend" / "commands"
+  GeneratedDirectory = ProjectRoot / "frontend" / "generated" / "rpc"
 
 proc generatedFile(name: string): string =
   readFile(GeneratedDirectory / name)
@@ -34,19 +34,33 @@ suite "frontend binding generation":
 
   test "generation reads metadata without changing current output":
     let before = @[
-      generatedFile("greeting.ts"),
-      generatedFile("types.ts"),
+      generatedFile("commands/greeting.ts"),
+      generatedFile("types/Greeting.ts"),
+      generatedFile("types/index.ts"),
       generatedFile(".frontend-bindings-manifest"),
     ]
 
     generateFrontendBindings()
 
-    check generatedFile("greeting.ts") == before[0]
-    check generatedFile("types.ts") == before[1]
-    check generatedFile(".frontend-bindings-manifest") == before[2]
+    check generatedFile("commands/greeting.ts") == before[0]
+    check generatedFile("types/Greeting.ts") == before[1]
+    check generatedFile("types/index.ts") == before[2]
+    check generatedFile(".frontend-bindings-manifest") == before[3]
 
   test "generated commands keep their wire names and types":
-    let commands = generatedFile("greeting.ts")
+    let commands = generatedFile("commands/greeting.ts")
 
     check "invoke<Greeting>('greeting.greet', { name })" in commands
     check "greet(name: string): Promise<Greeting>" in commands
+    check "from '../types/Greeting'" in commands
+    check "from '../../../rpc'" in commands
+
+  test "named types have individual files and a public barrel":
+    let
+      greetingType = generatedFile("types/Greeting.ts")
+      typeBarrel = generatedFile("types/index.ts")
+
+    check "export interface Greeting" in greetingType
+    check "from './Greeting'" in typeBarrel
+    check not fileExists(ProjectRoot / "frontend" / "commands" /
+      "greeting.ts")

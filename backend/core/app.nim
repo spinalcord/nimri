@@ -1,8 +1,8 @@
 import webui
 
-# Importing the aggregator initializes every frontend command registration.
+# Importing the RPC registry initializes every frontend command registration.
 {.push warning[UnusedImport]: off.}
-import commands
+import rpc_registry
 {.pop.}
 
 import nimri_rpc

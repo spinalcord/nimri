@@ -28,33 +28,47 @@ The build output is written to `bin/main`. The compiled frontend is embedded in 
 
 ## Add a Nim command
 
-Create a module below `backend/commands` and mark a typed procedure with `{.accessible.}`:
+Keep the contract and commands together below a feature directory. Named RPC
+types can live in `backend/features/greeting/types.nim`:
+
+```nim
+type Greeting* = object
+  message*: string
+```
+
+Commands for that feature live in
+`backend/features/greeting/commands/greeting.nim`:
 
 ```nim
 import nimri_rpc
-
-type Greeting* = object
-  message*: string
+import ../types
 
 proc greet*(name: string): Greeting {.accessible.} =
   Greeting(message: "Hello, " & name & "!")
 ```
 
-Do `./app.sh generate` And call Nim from Svelte:
+All command files below the same feature are combined into one generated
+frontend module. The feature path determines the namespace, so the command
+above keeps the wire name `greeting.greet` regardless of its Nim filename.
+
+Call Nim from Svelte:
+
+Import the command and use it like a typed async function:
 
 ```html
 <script lang="ts">
-  import { greet } from 'commands/greeting';
+  import { greet } from 'rpc/commands/greeting';
+  import type { Greeting } from 'rpc/types';
 
-  let greeting = '';
+  let greeting: Greeting | null = null;
 
   async function callGreet() {
-    greeting = (await greet('Mara')).message;
+    greeting = await greet('Mara');
   }
 </script>
 
 <button on:click={callGreet}>Call Nim</button>
-<p>{greeting}</p>
+<p>{greeting?.message ?? ''}</p>
 ```
 
 > No Magic Strings, No Magic Invokes, No manually using a REST-Api  
@@ -65,11 +79,8 @@ Do `./app.sh generate` And call Nim from Svelte:
 ```sh
 ./app.sh run        # Run the app
 ./app.sh dev        # Start the development workflow
-./app.sh generate   # Generates RPC Type Script files
-./app.sh serialize  # Serialize Methods/Types to Json (Only for framework developement)
 ./app.sh build      # Create a release build
 ```
-
 
 ## Limitations (For now)
 

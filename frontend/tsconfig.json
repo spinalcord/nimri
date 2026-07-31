@@ -10,7 +10,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "paths": {
-      "commands/*": ["commands/*"]
+      "rpc/*": ["generated/rpc/*"]
     },
     "resolveJsonModule": true,
     "skipLibCheck": true,

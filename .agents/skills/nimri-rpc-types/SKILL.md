@@ -12,7 +12,8 @@ Use only supported RPC types; export public types and object fields.
 1. Read [rpc-types.md](references/rpc-types.md) before defining a command contract.
 2. Prefer an enum to a string value set.
 3. Export every object, tuple alias, enum, and field required in TypeScript.
-4. After contract changes, run `./app.sh dev` and import generated types from `commands/types`.
+4. After contract changes, run `./app.sh dev` and import generated types from
+   `rpc/types`.
 5. Keep serialization constraints in the public contract; do not rely on a representation that only happens to work locally.
 
 ## Guardrails

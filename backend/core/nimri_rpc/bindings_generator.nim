@@ -90,21 +90,17 @@ proc frontendBindingsJson(model: FrontendBindingsModel): JsonNode =
       typeNode["members"] = %declaration.members
     result["types"].add(typeNode)
 
-proc relativeImport(modulePath, target: string): string =
-  let depth = modulePath.count('/')
-  result = "../".repeat(depth + 1) & target
-
-proc relativeTypesImport(modulePath: string): string =
-  let depth = modulePath.count('/')
-  if depth == 0:
-    result = "./types"
-  else:
-    result = "../".repeat(depth) & "types"
-
 proc frontendBindingsOutputDirectory(): string =
   result =
     if FrontendBindingsOutput.len > 0: FrontendBindingsOutput
-    else: FrontendRpcProjectRoot / "frontend" / "commands"
+    else: FrontendRpcProjectRoot / "frontend" / "generated" / "rpc"
+
+proc relativeTypeScriptImport(sourceFile, targetFile: string): string =
+  result = targetFile.relativePath(sourceFile.parentDir)
+    .changeFileExt("")
+    .replace(DirSep, '/')
+  if not result.startsWith("."):
+    result = "./" & result
 
 proc safeGeneratedPath(relativePath: string): bool =
   if relativePath.len == 0 or relativePath.isAbsolute or
@@ -384,6 +380,10 @@ proc validateFrontendBindingsModel(model: FrontendBindingsModel) =
     moduleCommandNames = initHashSet[string]()
 
   for typeIndex, declaration in model.types:
+    if not safeGeneratedPath("types/" & declaration.name & ".ts"):
+      raise newException(ValueError,
+        "Invalid frontend RPC metadata: unsafe type name at types[" &
+        $typeIndex & "]")
     if declaration.name.len == 0 or declaration.name in namedTypes:
       raise newException(ValueError,
         "Invalid frontend RPC metadata: duplicate or empty type name at types[" &
@@ -463,7 +463,7 @@ proc collectReferencedTypeNames(frontendType: FrontendType;
   else:
     discard
 
-proc renderCommandModule(modulePath: string;
+proc renderCommandModule(outputFile: string;
     bindings: seq[FrontendBinding]): string =
   var referencedTypes: seq[string]
   for binding in bindings:
@@ -472,7 +472,17 @@ proc renderCommandModule(modulePath: string;
     collectReferencedTypeNames(binding.returnType, referencedTypes)
   referencedTypes.sort()
 
-  var commandViews = newJArray()
+  let outputDirectory = frontendBindingsOutputDirectory()
+  var
+    commandViews = newJArray()
+    typeImportViews = newJArray()
+  for typeName in referencedTypes:
+    typeImportViews.add(%* {
+      "name": typeName,
+      "path": relativeTypeScriptImport(
+        outputFile, outputDirectory / "types" / (typeName & ".ts")),
+    })
+
   for bindingIndex, binding in bindings:
     var
       parameterDeclarations: seq[string]
@@ -508,42 +518,66 @@ proc renderCommandModule(modulePath: string;
     })
 
   let context = newContext()
-  context["hasTypeImports"] = referencedTypes.len > 0
-  context["typeImports"] = referencedTypes.join(", ")
-  context["typesImport"] = relativeTypesImport(modulePath)
-  context["rpcImport"] = relativeImport(modulePath, "rpc")
+  context["typeImports"] = typeImportViews
+  context["rpcImport"] = relativeTypeScriptImport(
+    outputFile, FrontendRpcProjectRoot / "frontend" / "rpc.ts")
   context["commands"] = commandViews
   result = CommandModuleTemplate.render(context)
 
-proc renderTypesFile(types: seq[TypeDeclaration]): string =
-  var typeViews = newJArray()
-  for typeIndex, declaration in types:
-    var typeView = %* {
+proc renderTypeFile(outputFile: string;
+    declaration: TypeDeclaration): string =
+  var
+    referencedTypes: seq[string]
+    importedTypes: seq[string]
+  for field in declaration.fields:
+    collectReferencedTypeNames(field.fieldType, referencedTypes)
+  for typeName in referencedTypes:
+    if typeName != declaration.name:
+      importedTypes.add(typeName)
+  importedTypes.sort()
+
+  var
+    typeImportViews = newJArray()
+    typeView = %* {
       "name": declaration.name,
       "isObject": declaration.kind == fntObject,
       "isEnum": declaration.kind == fntEnum,
       "isTuple": declaration.kind == fntTuple,
-      "last": typeIndex == types.high,
     }
-    case declaration.kind
-    of fntObject, fntTuple:
-      typeView["fields"] = newJArray()
-      for field in declaration.fields:
-        typeView["fields"].add(%* {
-          "name": field.name,
-          "type": typeScriptType(field.fieldType),
-        })
-    of fntEnum:
-      var members: seq[string]
-      for member in declaration.members:
-        members.add("'" & member & "'")
-      typeView["members"] = %members.join(" | ")
-    typeViews.add(typeView)
+  for typeName in importedTypes:
+    typeImportViews.add(%* {
+      "name": typeName,
+      "path": relativeTypeScriptImport(
+        outputFile, outputFile.parentDir / (typeName & ".ts")),
+    })
+
+  case declaration.kind
+  of fntObject, fntTuple:
+    typeView["fields"] = newJArray()
+    for field in declaration.fields:
+      typeView["fields"].add(%* {
+        "name": field.name,
+        "type": typeScriptType(field.fieldType),
+      })
+  of fntEnum:
+    var members: seq[string]
+    for member in declaration.members:
+      members.add("'" & member & "'")
+    typeView["members"] = %members.join(" | ")
 
   let context = newContext()
-  context["hasTypes"] = types.len > 0
-  context["types"] = typeViews
+  context["typeImports"] = typeImportViews
+  context["type"] = typeView
   result = TypesTemplate.render(context)
+
+proc renderTypesIndex(types: seq[TypeDeclaration]): string =
+  result = GeneratedHeader
+  if types.len == 0:
+    result.add("export {};\n")
+  else:
+    for declaration in types:
+      result.add("export type { " & declaration.name & " } from './" &
+        declaration.name & "';\n")
 
 proc generateFrontendFiles() =
   let model = readFrontendBindingsModel()
@@ -561,10 +595,15 @@ proc generateFrontendFiles() =
     for binding in model.commands:
       if binding.modulePath == modulePath:
         moduleBindings.add(binding)
-    files.add((modulePath & ".ts",
-      renderCommandModule(modulePath, moduleBindings)))
+    let relativePath = "commands/" & modulePath & ".ts"
+    files.add((relativePath, renderCommandModule(
+      frontendBindingsOutputDirectory() / relativePath, moduleBindings)))
 
-  files.add(("types.ts", renderTypesFile(model.types)))
+  for declaration in model.types:
+    let relativePath = "types/" & declaration.name & ".ts"
+    files.add((relativePath, renderTypeFile(
+      frontendBindingsOutputDirectory() / relativePath, declaration)))
+  files.add(("types/index.ts", renderTypesIndex(model.types)))
   files.sort(proc(left, right: (string, string)): int =
     cmp(left[0], right[0]))
   updateGeneratedFiles(files)

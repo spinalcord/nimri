@@ -1,25 +1,26 @@
 import std/[algorithm, macros, os, staticos, strutils]
 import nimri_rpc
 
-proc collectCommandModules(directory: string, modulePaths: var seq[string]) {.
+proc collectRpcCommandModules(directory: string, modulePaths: var seq[string]) {.
     compileTime.} =
   for entry in staticWalkDir(directory):
     case entry.kind
     of staticos.pcFile, staticos.pcLinkToFile:
-      if entry.path.endsWith(".nim"):
+      if entry.path.endsWith(".nim") and
+          entry.path.parentDir.extractFilename == "commands":
         modulePaths.add(entry.path)
     of staticos.pcDir:
-      collectCommandModules(entry.path, modulePaths)
+      collectRpcCommandModules(entry.path, modulePaths)
     of staticos.pcLinkToDir:
       discard
 
-macro importCommandModules(): untyped =
+macro importRpcCommandModules(): untyped =
   let
     sourcePath = currentSourcePath()
-    commandsDir = sourcePath.parentDir.parentDir / "commands"
+    featuresDirectory = sourcePath.parentDir.parentDir / "features"
   var modulePaths: seq[string]
 
-  collectCommandModules(commandsDir, modulePaths)
+  collectRpcCommandModules(featuresDirectory, modulePaths)
   modulePaths.sort()
   result = newStmtList()
 
@@ -29,17 +30,16 @@ macro importCommandModules(): untyped =
         .changeFileExt("")
         .replace(DirSep, '/')
       modulePath = newLit(relativePath)
-      moduleAlias = ident("frontendCommandModule" & $index)
+      moduleAlias = ident("rpcCommandModule" & $index)
       importTarget = newTree(nnkInfix, ident("as"), modulePath, moduleAlias)
       importStatement = newTree(nnkImportStmt, importTarget)
-      exportStatement = newTree(nnkExportStmt, moduleAlias)
 
     modulePath.setLineInfo(sourcePath, 1, 1)
     importTarget.setLineInfo(sourcePath, 1, 1)
     importStatement.setLineInfo(sourcePath, 1, 1)
-    exportStatement.setLineInfo(sourcePath, 1, 1)
     result.add importStatement
-    result.add exportStatement
 
-importCommandModules()
+{.push warning[UnusedImport]: off.}
+importRpcCommandModules()
+{.pop.}
 defineFrontendBindings()

@@ -1,6 +1,6 @@
 import std/[asyncdispatch, options, tables]
-import ../../../../backend/core/nimri_rpc
-import ../models
+import ../../../../../../backend/core/nimri_rpc
+import ../../../models
 
 proc inspect*(profiles: array[2, Profile]): Option[Profile] {.accessible.} =
   if profiles.len > 0:

@@ -19,7 +19,7 @@ export default defineConfig(({ command }) => ({
   ],
   resolve: {
     alias: {
-      commands: new URL('./commands', import.meta.url).pathname,
+      rpc: new URL('./generated/rpc', import.meta.url).pathname,
     },
   },
   server: {

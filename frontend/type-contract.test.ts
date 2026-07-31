@@ -1,4 +1,8 @@
-import { greet } from 'commands/greeting';
+import { greet } from 'rpc/commands/greeting';
+import type { Greeting } from 'rpc/types';
+
+const greeting: Greeting = { message: 'Hello from TypeScript' };
+void greeting;
 
 void greet('Mara');
 

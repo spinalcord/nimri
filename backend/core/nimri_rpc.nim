@@ -141,28 +141,27 @@ proc lowerCamelCase(name: string): string {.compileTime.} =
 proc isExportedName(node: NimNode): bool {.compileTime.} =
   node.kind == nnkPostfix and node.len == 2 and node[0].strVal == "*"
 
-proc commandsDirectory(): string {.compileTime.} =
-  currentSourcePath().parentDir.parentDir / "commands"
-
 proc modulePathFor(filename: string): string {.compileTime.} =
   let
     source = filename.normalizedPath
-    root = commandsDirectory().normalizedPath
-    relative = source.relativePath(root)
+    portableSource = source.replace(DirSep, '/')
+    featuresMarker = "/features/"
+    featureIndex = portableSource.rfind(featuresMarker)
 
-  if relative != ".." and not relative.startsWith("../") and
-      not relative.startsWith(".." & $DirSep):
-    result = relative.changeFileExt("").replace(DirSep, '/')
-  else:
+  if featureIndex >= 0:
     let
-      portableSource = source.replace(DirSep, '/')
+      featureStart = featureIndex + featuresMarker.len
       commandsMarker = "/commands/"
-      markerIndex = portableSource.rfind(commandsMarker)
-    if markerIndex >= 0:
-      result = portableSource[
-        markerIndex + commandsMarker.len .. ^1].changeFileExt("")
-    else:
-      result = source.extractFilename.changeFileExt("")
+      commandsIndex = portableSource.find(commandsMarker, featureStart)
+    if commandsIndex < 0:
+      error("accessible feature commands must be declared below a commands " &
+        "directory", newLit(filename))
+    result = portableSource[featureStart ..< commandsIndex]
+    if result.len == 0:
+      error("accessible commands require a non-empty feature path",
+        newLit(filename))
+  else:
+    result = source.extractFilename.changeFileExt("")
 
 proc futureValueType(typeNode: NimNode): NimNode {.compileTime.} =
   let node =

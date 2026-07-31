@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { greet } from 'commands/greeting';
+  import { greet } from 'rpc/commands/greeting';
 
   let name = 'Mara';
   let message = '';

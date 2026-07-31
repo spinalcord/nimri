@@ -1,6 +1,6 @@
 import std/asyncdispatch
-import ../../../../../backend/core/nimri_rpc
-import ../../models
+import ../../../../../../../backend/core/nimri_rpc
+import ../../../../models
 
 proc inspect*(profile: Profile): Profile {.accessible.} =
   profile
