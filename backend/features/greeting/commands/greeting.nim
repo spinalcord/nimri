@@ -1,3 +1,4 @@
+import std/[asyncdispatch, asyncstreams]
 import nimri_rpc
 import ../types
 
@@ -13,3 +14,20 @@ proc determineEnumType(someEnumType: SomeEnumType): string {.accessible.} =
     echo "Bar"
     return "Bar"
   else: return "test"
+
+
+proc produceStreamMessages(stream: FutureStream[string]): Future[void] {.async.} =
+  try:
+    for message in ["First message", "Second message", "Third message"]:
+      await stream.write(message)
+      await sleepAsync(500)
+    stream.complete()
+  except ValueError:
+    discard
+  except CatchableError as exception:
+    stream.fail(exception)
+
+
+proc streamMessages*(): FutureStream[string] {.accessible.} =
+  result = newFutureStream[string]("belongsto-streamMessages")
+  asyncCheck produceStreamMessages(result)

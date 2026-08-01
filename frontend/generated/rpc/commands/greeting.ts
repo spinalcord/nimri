@@ -2,6 +2,7 @@
 import type { Greeting } from '../types/Greeting';
 import type { SomeEnumType } from '../types/SomeEnumType';
 import { invoke } from '../../../rpc';
+import { invokeStream, type NimriStream } from '../../../rpc';
 
 export function determineEnumType(someEnumType: SomeEnumType): Promise<string> {
   return invoke<string>('greeting.determineEnumType', { someEnumType });
@@ -9,4 +10,8 @@ export function determineEnumType(someEnumType: SomeEnumType): Promise<string> {
 
 export function greet(name: string): Promise<Greeting> {
   return invoke<Greeting>('greeting.greet', { name });
+}
+
+export function streamMessages(): NimriStream<string> {
+  return invokeStream<string>('greeting.streamMessages', {  });
 }
