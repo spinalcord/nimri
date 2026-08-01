@@ -7,6 +7,8 @@ description: Run, test, generate, build, or diagnose a Nimri desktop application
 
 Run `app.sh` from the repository root.
 
+Use `$nimri-feature-workflow` first when creating or extending a feature across the backend and Svelte UI.
+
 ## Commands
 
 | Goal | Command |

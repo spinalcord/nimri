@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nimri Feature Workflow"
+  short_description: "Build full Nimri features end to end"
+  default_prompt: "Use $nimri-feature-workflow to create or extend a Nimri feature end to end."

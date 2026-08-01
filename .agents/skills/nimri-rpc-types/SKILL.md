@@ -7,6 +7,8 @@ description: Design, implement, review, or diagnose Nimri RPC data contracts, in
 
 Use only supported RPC types; export public types and object fields.
 
+For work that spans a complete backend-to-Svelte feature, start with `$nimri-feature-workflow`.
+
 ## Workflow
 
 1. Read [rpc-types.md](references/rpc-types.md) before defining a command contract.

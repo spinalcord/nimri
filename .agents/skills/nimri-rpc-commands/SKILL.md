@@ -7,6 +7,8 @@ description: Create, modify, or review typed Nimri RPC commands and generated Sv
 
 Implement the backend procedure and use its generated TypeScript binding; never add a manual RPC transport call.
 
+For work that spans a complete backend-to-Svelte feature, start with `$nimri-feature-workflow`.
+
 ## Workflow
 
 1. Create or update a module below
