@@ -55,6 +55,9 @@ proc greet*(name: string): Greeting {.accessible.} =
 All command files below the same feature are combined into one generated
 frontend module. The feature path determines the namespace, so the command
 above keeps the wire name `greeting.greet` regardless of its Nim filename.
+Commands with the same name in different features remain distinct, such as
+`greeting.greet` and `profile.greet`; duplicate command names inside one
+feature are rejected during compilation.
 
 Call Nim from Svelte:
 
