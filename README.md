@@ -26,7 +26,12 @@ The development command compiles the Nim application, starts Vite, and opens the
 
 The build output is written to `bin/main`. The compiled frontend is embedded in the binary.
 
-## Add a Nim command
+## Add a feature
+
+Treat a feature as one vertical slice: define its RPC contract and commands in
+`backend/features/<feature>/`, generate the bindings with `./app.sh dev`, then
+connect the generated API to a Svelte component. Do not edit files below
+`frontend/generated/` manually.
 
 Keep the contract and commands together below a feature directory. Named RPC
 types can live in `backend/features/greeting/types.nim`:
