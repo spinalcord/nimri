@@ -79,20 +79,16 @@ Import the command and use it like a typed async function:
 <p>{greeting?.message ?? ''}</p>
 ```
 
-> [!NOTE]
 > No Magic Strings, No Magic Invokes, No manually using a REST-Api  
 > This feels like developing Qt, Avalonia or Wpf applications
 
 ## Development commands
 
 ```sh
-./app.sh generate   # Generate Frontend Data
 ./app.sh run        # Run the app
 ./app.sh dev        # Start the development workflow
 ./app.sh build      # Create a release build
 ```
-
-Most of the time you need propably `generate` and `dev`.
 
 ## Supported RPC capabilities
 
@@ -101,6 +97,7 @@ Most of the time you need propably `generate` and `dev`.
   arrays, `Table[string, T]`, `OrderedTable[string, T]`, exported plain
   objects with exported fields, and exported named tuples.
 - Synchronous commands and cooperative asynchronous commands returning
+<<<<<<< HEAD
   `Future[T]`; generated frontend functions return promises.
 - Streaming commands returning `FutureStream[T]`; generated frontend functions
   return a lazy `NimriStream<T>` that works with `for await...of`.
@@ -168,6 +165,9 @@ producer `write` futures fail with `ValueError`; producers should await writes
 and stop when that happens. Producer exceptions, failed streams, and JSON
 serialization errors reject the next frontend read. A normal stream completion
 returns `{ done: true }` from `next()`.
+=======
+  `Future[T]`; generated frontend functions always return promises.
+>>>>>>> 7f45c0f (Readme should explain why some Limitations are difficult)
 
 ## Limitations
 
@@ -180,7 +180,11 @@ These limits require framework work rather than a local feature implementation.
 | Object inheritance and variant objects | Challenging, because generated TypeScript needs a stable discriminator and complete subtype schema. |
 | Positional tuples, non-string table keys, and object default fields | Feasible with explicit JSON encodings. |
 | Integers outside JavaScript's safe range, `NaN`, and infinities | Challenging, because JSON and JavaScript `number` do not preserve them safely. |
+<<<<<<< HEAD
 | Automatic timeouts and resumable or multi-consumer streams | Challenging, because they need additional lifecycle and replay semantics. |
+=======
+| Async progress, streaming, cancellation, and automatic timeouts | Challenging, because they need a multi-message RPC protocol and frontend lifecycle handling. |
+>>>>>>> 7f45c0f (Readme should explain why some Limitations are difficult)
 
 ## Status
 
