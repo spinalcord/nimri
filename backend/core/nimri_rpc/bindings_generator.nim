@@ -21,11 +21,13 @@ proc commandKindName(kind: FrontendCommandKind): string =
   case kind
   of fckSynchronous: "synchronous"
   of fckAsynchronous: "asynchronous"
+  of fckStreaming: "streaming"
 
 proc parseCommandKind(name, path: string): FrontendCommandKind =
   case name
   of "synchronous": fckSynchronous
   of "asynchronous": fckAsynchronous
+  of "streaming": fckStreaming
   else:
     raise newException(ValueError,
       "Invalid frontend RPC metadata: unknown command kind '" & name &
@@ -53,7 +55,7 @@ proc frontendTypeJson(frontendType: FrontendType): JsonNode =
 
 proc frontendBindingsJson(model: FrontendBindingsModel): JsonNode =
   result = newJObject()
-  result["schemaVersion"] = %3
+  result["schemaVersion"] = %4
   result["commands"] = newJArray()
   for binding in model.commands:
     var command = newJObject()
@@ -226,7 +228,7 @@ proc readFrontendBindingsModel(): FrontendBindingsModel =
 
   let schemaVersion = requireField(
     root, "schemaVersion", "root", JInt).getInt()
-  if schemaVersion != 3:
+  if schemaVersion != 4:
     raise newException(ValueError,
       "Unsupported frontend RPC metadata schema version " & $schemaVersion)
 
@@ -447,7 +449,8 @@ proc validateFrontendBindingsModel(model: FrontendBindingsModel) =
         parameter.parameterType, namedTypes, false,
         path & ".parameters[" & $parameterIndex & "].type")
     validateFrontendType(
-      binding.returnType, namedTypes, true, path & ".returnType")
+      binding.returnType, namedTypes,
+      binding.commandKind != fckStreaming, path & ".returnType")
 
 proc collectReferencedTypeNames(frontendType: FrontendType;
     names: var seq[string]) =
@@ -476,6 +479,8 @@ proc renderCommandModule(outputFile: string;
   var
     commandViews = newJArray()
     typeImportViews = newJArray()
+    usesInvoke = false
+    usesStream = false
   for typeName in referencedTypes:
     typeImportViews.add(%* {
       "name": typeName,
@@ -484,6 +489,10 @@ proc renderCommandModule(outputFile: string;
     })
 
   for bindingIndex, binding in bindings:
+    if binding.commandKind == fckStreaming:
+      usesStream = true
+    else:
+      usesInvoke = true
     var
       parameterDeclarations: seq[string]
       argumentFields: seq[string]
@@ -514,11 +523,14 @@ proc renderCommandModule(outputFile: string;
       "returnType": typeScriptType(binding.returnType),
       "wireName": binding.wireName,
       "arguments": argumentFields.join(", "),
+      "isStreaming": binding.commandKind == fckStreaming,
       "last": bindingIndex == bindings.high,
     })
 
   let context = newContext()
   context["typeImports"] = typeImportViews
+  context["usesInvoke"] = usesInvoke
+  context["usesStream"] = usesStream
   context["rpcImport"] = relativeTypeScriptImport(
     outputFile, FrontendRpcProjectRoot / "frontend" / "rpc.ts")
   context["commands"] = commandViews

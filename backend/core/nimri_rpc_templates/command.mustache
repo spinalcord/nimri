@@ -2,12 +2,24 @@
 {{#typeImports}}
 import type { {{name}} } from '{{path}}';
 {{/typeImports}}
+{{#usesInvoke}}
 import { invoke } from '{{rpcImport}}';
+{{/usesInvoke}}
+{{#usesStream}}
+import { invokeStream, type NimriStream } from '{{rpcImport}}';
+{{/usesStream}}
 
 {{#commands}}
+{{#isStreaming}}
+export function {{tsName}}({{{parameters}}}): NimriStream<{{{returnType}}}> {
+  return invokeStream<{{{returnType}}}>('{{wireName}}', { {{{arguments}}} });
+}
+{{/isStreaming}}
+{{^isStreaming}}
 export function {{tsName}}({{{parameters}}}): Promise<{{{returnType}}}> {
   return invoke<{{{returnType}}}>('{{wireName}}', { {{{arguments}}} });
 }
+{{/isStreaming}}
 {{^last}}
 
 {{/last}}

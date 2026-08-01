@@ -90,21 +90,93 @@ Import the command and use it like a typed async function:
 ./app.sh build      # Create a release build
 ```
 
-## Limitations (For now)
+## Supported RPC capabilities
 
-- Commands must be normally named, non-generic procedures with explicit parameter types.
-- Supported values are strings, booleans, numeric types, enums, `Option[T]`,
-  sequences, fixed arrays, `Table[string, T]`, `OrderedTable[string, T]`,
-  exported plain objects with exported fields, and tuples whose fields are all
-  named.
-- Tuple aliases used by RPC commands must be exported. Positional tuples,
-  tables with non-string keys, references, pointers, and other unsupported
-  generic types cannot cross the RPC boundary.
-- Objects cannot use inheritance, variant fields, or default field values.
-- Integers must fit within JavaScript's safe integer range.
-- Floating-point values must be finite. `NaN`, positive infinity, and negative infinity are rejected.
-- Async commands do not currently support progress, streaming, cancellation, or automatic timeouts.
-- Frontend command functions always return promises, for both synchronous and asynchronous Nim commands.
+- Normally named, non-generic procedures with explicit parameter types.
+- Strings, booleans, numeric types, enums, `Option[T]`, sequences, fixed
+  arrays, `Table[string, T]`, `OrderedTable[string, T]`, exported plain
+  objects with exported fields, and exported named tuples.
+- Synchronous commands and cooperative asynchronous commands returning
+  `Future[T]`; generated frontend functions return promises.
+- Streaming commands returning `FutureStream[T]`; generated frontend functions
+  return a lazy `NimriStream<T>` that works with `for await...of`.
+
+## Stream command results
+
+Use `std/asyncstreams.FutureStream[T]` when one command needs to deliver values
+over time. Return the stream directly rather than wrapping it in `Future`:
+
+```nim
+import std/[asyncdispatch, asyncstreams]
+import nimri_rpc
+
+type Update* = object
+  message*: string
+
+proc produceUpdates(stream: FutureStream[Update]): Future[void] {.async.} =
+  try:
+    await stream.write(Update(message: "Starting"))
+    await stream.write(Update(message: "Finished"))
+    stream.complete()
+  except ValueError:
+    # The consumer canceled or its window disconnected.
+    discard
+  except CatchableError as exception:
+    stream.fail(exception)
+
+proc updates*(): FutureStream[Update] {.accessible.} =
+  result = newFutureStream[Update]("updates")
+  asyncCheck produceUpdates(result)
+```
+
+The generated Svelte binding starts the backend command only when the first
+value is requested:
+
+```html
+<script lang="ts">
+  import { updates } from 'rpc/commands/activity';
+
+  async function readUpdates() {
+    try {
+      for await (const update of updates()) {
+        console.log(update.message);
+      }
+    } catch (reason) {
+      console.error('Update stream failed', reason);
+    }
+  }
+</script>
+```
+
+Each `NimriStream<T>` is single-use and supports one consumer. It has no replay,
+fan-out, or backend backpressure. Breaking out of `for await...of` calls
+`return()` and cancels the backend stream. A stream can also be canceled
+explicitly:
+
+```ts
+const stream = updates();
+const first = await stream.next();
+await stream.cancel();
+```
+
+Cancellation is cooperative. Nim closes the underlying `FutureStream`, so later
+producer `write` futures fail with `ValueError`; producers should await writes
+and stop when that happens. Producer exceptions, failed streams, and JSON
+serialization errors reject the next frontend read. A normal stream completion
+returns `{ done: true }` from `next()`.
+
+## Limitations
+
+These limits require framework work rather than a local feature implementation.
+
+| Limitation | Difficulty |
+| --- | --- |
+| References and pointers | Nearly impossible, because safe object identity, lifetime, and cyclic graphs need a separate resource model. |
+| Generic command procedures | Challenging, because every frontend binding needs a concrete signature. |
+| Object inheritance and variant objects | Challenging, because generated TypeScript needs a stable discriminator and complete subtype schema. |
+| Positional tuples, non-string table keys, and object default fields | Feasible with explicit JSON encodings. |
+| Integers outside JavaScript's safe range, `NaN`, and infinities | Challenging, because JSON and JavaScript `number` do not preserve them safely. |
+| Automatic timeouts and resumable or multi-consumer streams | Challenging, because they need additional lifecycle and replay semantics. |
 
 ## Status
 

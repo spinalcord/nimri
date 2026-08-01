@@ -1,6 +1,15 @@
 type FrontendBridgeResponseKind = enum
   fbrAccepted
 
+type FrontendStreamEventKind = enum
+  fseValue
+  fseComplete
+  fseError
+
+type ActiveFrontendStream = ref object
+  stream: FrontendStream
+  canceled: bool
+
 var
   frontendRequestQueue: Channel[string]
   frontendWakeEvent: AsyncEvent
@@ -8,12 +17,20 @@ var
   frontendRuntimeInitialized = false
   frontendLocksInitialized = false
   activeRequestIds = initHashSet[string]()
+  canceledStreamRequestIds = initHashSet[string]()
+  activeFrontendStreams = initTable[string, ActiveFrontendStream]()
   activeRequestIdsLock: Lock
   frontendWakeLock: Lock
 
 proc bridgeResponseKindName(kind: FrontendBridgeResponseKind): string =
   case kind
   of fbrAccepted: "accepted"
+
+proc streamEventKindName(kind: FrontendStreamEventKind): string =
+  case kind
+  of fseValue: "value"
+  of fseComplete: "complete"
+  of fseError: "error"
 
 proc requestId(request: JsonNode): string =
   if not request.hasKey("requestId") or request["requestId"].kind != JString:
@@ -40,6 +57,29 @@ proc releaseRequestId(requestId: string) =
   finally:
     release(activeRequestIdsLock)
 
+proc requestStreamCancellation(requestId: string): bool =
+  acquire(activeRequestIdsLock)
+  try:
+    if requestId in activeRequestIds:
+      canceledStreamRequestIds.incl(requestId)
+      result = true
+  finally:
+    release(activeRequestIdsLock)
+
+proc streamCancellationRequested(requestId: string): bool =
+  acquire(activeRequestIdsLock)
+  try:
+    result = requestId in canceledStreamRequestIds
+  finally:
+    release(activeRequestIdsLock)
+
+proc clearStreamCancellation(requestId: string) =
+  acquire(activeRequestIdsLock)
+  try:
+    canceledStreamRequestIds.excl(requestId)
+  finally:
+    release(activeRequestIdsLock)
+
 proc queueFrontendRequest(requestJson: string): bool =
   acquire(frontendWakeLock)
   try:
@@ -58,9 +98,84 @@ proc acceptedResponse(requestId: string): string =
     "requestId": requestId,
   })
 
+proc cancellationResponse(): string =
+  $(%* {"ok": true})
+
 proc completionScript(requestId, response: string): string =
   let arguments = %*[requestId, parseJson(response)]
   result = "window.__nimriRpcComplete?.(..." & $arguments & ");"
+
+proc streamEventScript(requestId: string, event: JsonNode): string =
+  let arguments = %*[requestId, event]
+  result = "window.__nimriRpcStreamEvent?.(..." & $arguments & ");"
+
+proc sendFrontendStreamEvent(
+    window: Window, requestId: string, event: JsonNode) =
+  acquire(frontendWakeLock)
+  try:
+    if frontendRuntimeInitialized and frontendWindowOpen.load(moAcquire):
+      window.run(streamEventScript(requestId, event))
+  finally:
+    release(frontendWakeLock)
+
+proc releaseFrontendStream(
+    requestId: string, activeStream: ActiveFrontendStream) =
+  if activeFrontendStreams.hasKey(requestId) and
+      activeFrontendStreams[requestId] == activeStream:
+    activeFrontendStreams.del(requestId)
+    releaseRequestId(requestId)
+  clearStreamCancellation(requestId)
+
+proc forwardFrontendStream(window: Window, requestId: string,
+    activeStream: ActiveFrontendStream): Future[void] {.async.} =
+  try:
+    while not activeStream.canceled:
+      let item = await activeStream.stream.readNext()
+      if activeStream.canceled:
+        return
+      if not item.hasValue:
+        sendFrontendStreamEvent(window, requestId, %* {
+          "kind": streamEventKindName(fseComplete),
+        })
+        return
+      sendFrontendStreamEvent(window, requestId, %* {
+        "kind": streamEventKindName(fseValue),
+        "value": item.value,
+      })
+  except CatchableError as exception:
+    if not activeStream.canceled:
+      activeStream.canceled = true
+      activeStream.stream.cancel()
+      sendFrontendStreamEvent(window, requestId, %* {
+        "kind": streamEventKindName(fseError),
+        "error": asyncErrorMessage(exception),
+      })
+  finally:
+    releaseFrontendStream(requestId, activeStream)
+
+proc cancelFrontendStream(requestId: string) =
+  if not activeFrontendStreams.hasKey(requestId):
+    return
+
+  let activeStream = activeFrontendStreams[requestId]
+  activeStream.canceled = true
+  activeStream.stream.cancel()
+  releaseFrontendStream(requestId, activeStream)
+
+proc cancelRequestedFrontendStreams() =
+  var requestIds: seq[string]
+  for requestId in activeFrontendStreams.keys:
+    if streamCancellationRequested(requestId):
+      requestIds.add(requestId)
+  for requestId in requestIds:
+    cancelFrontendStream(requestId)
+
+proc cancelAllFrontendStreams() =
+  var requestIds: seq[string]
+  for requestId in activeFrontendStreams.keys:
+    requestIds.add(requestId)
+  for requestId in requestIds:
+    cancelFrontendStream(requestId)
 
 proc completeFrontendRequest(
     window: Window, requestId: string, response: Future[string]) =
@@ -85,21 +200,51 @@ proc startQueuedFrontendRequests(window: Window) =
     if not queued.dataAvailable:
       break
 
-    var queuedRequestId = ""
+    var
+      queuedRequestId = ""
+      queuedCommandName = ""
     try:
-      let (request, _, _) = frontendRequest(queued.msg)
+      let (request, commandName, _) = frontendRequest(queued.msg)
       queuedRequestId = requestId(request)
-      let response = dispatchFrontendRequestAsync(queued.msg)
-      let completionRequestId = queuedRequestId
-      response.addCallback(proc() {.gcsafe.} =
-        {.cast(gcsafe).}:
-          completeFrontendRequest(window, completionRequestId, response)
-      )
+      queuedCommandName = commandName
+      let command = frontendCommands[commandName]
+      if command.kind == fckStreaming:
+        if streamCancellationRequested(queuedRequestId):
+          clearStreamCancellation(queuedRequestId)
+          releaseRequestId(queuedRequestId)
+          continue
+
+        let activeStream = ActiveFrontendStream(
+          stream: openFrontendStream(queued.msg)
+        )
+        activeFrontendStreams[queuedRequestId] = activeStream
+        if streamCancellationRequested(queuedRequestId):
+          cancelFrontendStream(queuedRequestId)
+        else:
+          asyncCheck forwardFrontendStream(
+            window, queuedRequestId, activeStream)
+      else:
+        let response = dispatchFrontendRequestAsync(queued.msg)
+        let completionRequestId = queuedRequestId
+        response.addCallback(proc() {.gcsafe.} =
+          {.cast(gcsafe).}:
+            completeFrontendRequest(window, completionRequestId, response)
+        )
     except CatchableError as exception:
       if queuedRequestId.len > 0:
-        let failedResponse = newFuture[string]("startQueuedFrontendRequests")
-        failedResponse.complete(errorResponse(exception.msg))
-        completeFrontendRequest(window, queuedRequestId, failedResponse)
+        if frontendCommands.hasKey(queuedCommandName) and
+            frontendCommands[queuedCommandName].kind == fckStreaming:
+          releaseRequestId(queuedRequestId)
+          clearStreamCancellation(queuedRequestId)
+          sendFrontendStreamEvent(window, queuedRequestId, %* {
+            "kind": streamEventKindName(fseError),
+            "error": exception.msg,
+          })
+        else:
+          let failedResponse =
+            newFuture[string]("startQueuedFrontendRequests")
+          failedResponse.complete(errorResponse(exception.msg))
+          completeFrontendRequest(window, queuedRequestId, failedResponse)
 
 proc bindFrontendCommands*(window: Window) =
   ## Installs the single WebUI binding used by every frontend command.
@@ -140,6 +285,21 @@ proc bindFrontendCommands*(window: Window) =
       result = errorResponse(exception.msg)
   )
 
+  window.bind("__nimriRpcCancel", proc(event: Event): string =
+    let id = event.getString()
+    if id.len == 0:
+      return errorResponse("Frontend stream request ID must not be empty")
+
+    if requestStreamCancellation(id):
+      acquire(frontendWakeLock)
+      try:
+        if frontendRuntimeInitialized and frontendWindowOpen.load(moAcquire):
+          frontendWakeEvent.trigger()
+      finally:
+        release(frontendWakeLock)
+    result = cancellationResponse()
+  )
+
   window.bind("", proc(event: Event) =
     if event.eventType == EventsDisconnected:
       acquire(frontendWakeLock)
@@ -162,8 +322,11 @@ proc runFrontendEventLoop*(window: Window) =
       frontendWindowOpen.store(false, moRelease)
       break
     startQueuedFrontendRequests(window)
+    cancelRequestedFrontendStreams()
     # FIX: A finite ceiling lets asyncdispatch honor its next timer deadline.
     poll(int32.high.int)
+
+  cancelAllFrontendStreams()
 
   acquire(frontendWakeLock)
   try:
@@ -177,5 +340,6 @@ proc runFrontendEventLoop*(window: Window) =
   acquire(activeRequestIdsLock)
   try:
     activeRequestIds.clear()
+    canceledStreamRequestIds.clear()
   finally:
     release(activeRequestIdsLock)

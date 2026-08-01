@@ -1,6 +1,6 @@
 import std/[
-  algorithm, asyncdispatch, atomics, json, locks, macros, math, options, os,
-  sets, strutils, tables
+  algorithm, asyncdispatch, asyncstreams, atomics, json, locks, macros, math,
+  options, os, sets, strutils, tables
 ]
 import mustache
 import webui
@@ -9,6 +9,7 @@ type
   FrontendCommandKind* = enum
     fckSynchronous
     fckAsynchronous
+    fckStreaming
 
   FrontendTypeKind = enum
     ftkVoid
@@ -163,21 +164,59 @@ proc modulePathFor(filename: string): string {.compileTime.} =
   else:
     result = source.extractFilename.changeFileExt("")
 
-proc futureValueType(typeNode: NimNode): NimNode {.compileTime.} =
+proc replaceTypeParameters(typeNode: NimNode;
+    replacements: Table[string, NimNode]): NimNode {.compileTime.} =
+  if typeNode.kind in {nnkIdent, nnkSym} and
+      replacements.hasKey(typeNode.strVal):
+    return replacements[typeNode.strVal].copyNimTree
+
+  result = typeNode.copyNimNode
+  for child in typeNode:
+    result.add(replaceTypeParameters(child, replacements))
+
+proc wrappedValueType(typeNode, wrapper: NimNode): NimNode {.compileTime.} =
   let node =
     if typeNode.kind == nnkVarTy: typeNode[0]
     else: typeNode
 
   if node.kind == nnkBracketExpr and node.len == 2 and
-      node[0].sameType(bindSym"Future"):
+      (node[0].sameType(wrapper) or node[0].eqIdent(wrapper.strVal)):
     return node[1]
+
+  if node.kind == nnkBracketExpr and node.len > 1 and
+      node[0].kind == nnkSym:
+    let definition = node[0].getImpl
+    if definition.kind == nnkTypeDef and
+        definition[1].kind == nnkGenericParams and
+        definition[1].len == node.len - 1:
+      var replacements = initTable[string, NimNode]()
+      for index, parameter in definition[1]:
+        if parameter.kind notin {nnkIdent, nnkSym}:
+          return newEmptyNode()
+        replacements[parameter.strVal] = node[index + 1]
+      return wrappedValueType(
+        replaceTypeParameters(definition[2], replacements), wrapper)
 
   if node.kind == nnkSym:
     let definition = node.getImpl
     if definition.kind == nnkTypeDef:
-      return futureValueType(definition[2])
+      return wrappedValueType(definition[2], wrapper)
 
   result = newEmptyNode()
+
+proc futureValueType(typeNode: NimNode): NimNode {.compileTime.} =
+  wrappedValueType(typeNode, bindSym"Future")
+
+proc futureStreamValueType(typeNode: NimNode): NimNode {.compileTime.} =
+  wrappedValueType(typeNode, bindSym"FutureStream")
+
+proc isVoidType(typeNode: NimNode): bool {.compileTime.} =
+  if typeNode.kind in {nnkIdent, nnkSym} and typeNode.eqIdent("void"):
+    return true
+  if typeNode.kind == nnkSym:
+    let definition = typeNode.getImpl
+    if definition.kind == nnkTypeDef:
+      return isVoidType(definition[2])
 
 include nimri_rpc/frontend_types
 
@@ -217,10 +256,14 @@ macro collectFrontendBinding*(target: typed; modulePath, nimName,
         hasDefault: parameter[^1].kind != nnkEmpty
       ))
 
-  let futureType = futureValueType(formalParams[0])
+  let
+    futureType = futureValueType(formalParams[0])
+    streamType = futureStreamValueType(formalParams[0])
   binding.returnType = frontendType(
-    if commandKind == fckAsynchronous: futureType
-    else: formalParams[0]
+    case commandKind
+    of fckSynchronous: formalParams[0]
+    of fckAsynchronous: futureType
+    of fckStreaming: streamType
   )
 
   for existing in collectedBindings:
@@ -240,10 +283,26 @@ macro createFrontendCommandAdapter(target: typed; modulePath, nimName,
     definition = target.getImpl
     formalParams = definition[3]
     futureType = futureValueType(formalParams[0])
+    streamType = futureStreamValueType(formalParams[0])
     commandKind =
-      if futureType.kind == nnkEmpty: fckSynchronous
-      else: fckAsynchronous
+      if streamType.kind != nnkEmpty: fckStreaming
+      elif futureType.kind != nnkEmpty: fckAsynchronous
+      else: fckSynchronous
     argsNode = genSym(nskParam, "args")
+
+  if futureType.kind != nnkEmpty and
+      futureStreamValueType(futureType).kind != nnkEmpty:
+    error("accessible commands cannot return Future[FutureStream[T]]; " &
+      "return FutureStream[T] directly", formalParams[0])
+
+  if commandKind == fckStreaming:
+    if isVoidType(streamType):
+      error("accessible streaming commands cannot return FutureStream[void]",
+        formalParams[0])
+    if futureValueType(streamType).kind != nnkEmpty or
+        futureStreamValueType(streamType).kind != nnkEmpty:
+      error("accessible streaming command elements cannot be Future or " &
+        "FutureStream values", formalParams[0])
 
   var
     adapterBody = newStmtList()
@@ -295,10 +354,38 @@ macro createFrontendCommandAdapter(target: typed; modulePath, nimName,
     newLit(modulePath), newLit(nimName), newLit(wireName),
     newLit(commandKind))
 
-  if commandKind == fckAsynchronous:
+  if commandKind == fckStreaming:
+    let
+      stream = genSym(nskLet, "stream")
+      item = genSym(nskLet, "item")
+    adapterBody.add quote do:
+      let `stream` = `call`
+      if `stream`.isNil:
+        raise newException(
+          ValueError, "Accessible streaming command returned a nil stream")
+      result = FrontendStream(
+        readNext: proc(): Future[FrontendStreamRead] {.async.} =
+          let `item` = await `stream`.read()
+          if `item`[0]:
+            result = FrontendStreamRead(
+              hasValue: true,
+              value: frontendToJson(`item`[1])
+            ),
+        cancel: proc() =
+          if not `stream`.failed:
+            `stream`.complete()
+      )
+
+    result.add quote do:
+      registerFrontendStreamCommand(
+        `wireName`,
+        proc(`argsNode`: JsonNode): FrontendStream =
+          `adapterBody`
+      )
+  elif commandKind == fckAsynchronous:
     if futureType.kind == nnkEmpty:
       error("internal error resolving asynchronous frontend result", target)
-    elif futureType.strVal == "void":
+    elif isVoidType(futureType):
       adapterBody.add quote do:
         await `call`
         result = newJNull()

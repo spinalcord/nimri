@@ -2,11 +2,20 @@ type
   FrontendSyncCommand = proc(args: JsonNode): JsonNode {.closure.}
   FrontendAsyncCommand =
     proc(args: JsonNode): Future[JsonNode] {.closure.}
+  FrontendStreamRead = object
+    hasValue: bool
+    value: JsonNode
+  FrontendStream = ref object
+    readNext: proc(): Future[FrontendStreamRead] {.closure.}
+    cancel: proc() {.closure.}
+  FrontendStreamCommand =
+    proc(args: JsonNode): FrontendStream {.closure.}
 
   FrontendCommand = object
     kind: FrontendCommandKind
     syncAdapter: FrontendSyncCommand
     asyncAdapter: FrontendAsyncCommand
+    streamAdapter: FrontendStreamCommand
 
 var frontendCommands = initTable[string, FrontendCommand]()
 
@@ -27,6 +36,13 @@ proc registerFrontendAsyncCommand(
   registerFrontendCommand(name, FrontendCommand(
     kind: fckAsynchronous,
     asyncAdapter: command
+  ))
+
+proc registerFrontendStreamCommand(
+    name: string, command: FrontendStreamCommand) =
+  registerFrontendCommand(name, FrontendCommand(
+    kind: fckStreaming,
+    streamAdapter: command
   ))
 
 proc errorResponse(message: string): string =
@@ -67,6 +83,10 @@ proc dispatchFrontendRequest*(requestJson: string): string =
       return errorResponse(
         "Frontend command '" & commandName & "' is asynchronous; use " &
         "dispatchFrontendRequestAsync")
+    if command.kind == fckStreaming:
+      return errorResponse(
+        "Frontend command '" & commandName & "' is streaming; use the " &
+        "frontend stream transport")
 
     let value = command.syncAdapter(args)
     result = $(%* {"ok": true, "value": value})
@@ -88,6 +108,22 @@ proc dispatchFrontendRequestAsync*(
         command.syncAdapter(args)
       of fckAsynchronous:
         await command.asyncAdapter(args)
+      of fckStreaming:
+        return errorResponse(
+          "Frontend command '" & commandName & "' is streaming; use the " &
+          "frontend stream transport")
     result = $(%* {"ok": true, "value": value})
   except CatchableError as exception:
     result = errorResponse(asyncErrorMessage(exception))
+
+proc openFrontendStream(requestJson: string): FrontendStream =
+  let (_, commandName, args) = frontendRequest(requestJson)
+  if not frontendCommands.hasKey(commandName):
+    raise newException(
+      ValueError, "Unknown frontend command '" & commandName & "'")
+
+  let command = frontendCommands[commandName]
+  if command.kind != fckStreaming:
+    raise newException(
+      ValueError, "Frontend command '" & commandName & "' is not streaming")
+  result = command.streamAdapter(args)
