@@ -18,13 +18,17 @@ npm --prefix frontend install
 ./app.sh dev
 ```
 
+On Windows, use `.\app.ps1 dev` in PowerShell instead.
+
 The development command compiles the Nim application, starts Vite, and opens the desktop window. For a release build, run:
 
 ```sh
 ./app.sh build
 ```
 
-The build output is written to `bin/main`. The compiled frontend is embedded in the binary.
+The build output is written to `bin/main`. On Windows, `.\app.ps1 build` writes
+`bin\main.exe` and its required MinGW runtime DLLs. The compiled frontend is
+embedded in the binary.
 
 ## Add a feature
 
@@ -91,6 +95,9 @@ Import the command and use it like a typed async function:
 ./app.sh dev        # Start the development workflow
 ./app.sh build      # Create a release build
 ```
+
+On Windows, use the corresponding `.\app.ps1` command. Both scripts also
+support `serialize` and `test`.
 
 Most of the time you need propably `generate` and `dev`.
 
