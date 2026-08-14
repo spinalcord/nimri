@@ -17,7 +17,7 @@ For work that spans a complete backend-to-Svelte feature, start with `$nimri-fea
 3. Use a plain return type for immediate commands, `Future[T]` with
    `{.async, accessible.}` for one cooperative asynchronous result, or return
    `FutureStream[T]` directly for multiple results over time.
-4. Run `./app.sh dev`, then import the command from
+4. Run `npm run dev`, then import the command from
    `rpc/commands/<feature>` in Svelte.
 5. Let command exceptions reject the generated Promise or stream read; handle
    expected failures in the Svelte caller.

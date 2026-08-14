@@ -1,11 +1,11 @@
 ---
 name: nimri-development
-description: Run, test, generate, build, or diagnose a Nimri desktop application through app.sh, including RPC generation, frontend contract tests, development startup, and release builds.
+description: Run, test, generate, build, or diagnose a Nimri desktop application through npm, including RPC generation, frontend contract tests, development startup, and release builds.
 ---
 
 # Nimri Development
 
-Run `app.sh` from the repository root.
+Run npm commands from the repository root.
 
 Use `$nimri-feature-workflow` first when creating or extending a feature across the backend and Svelte UI.
 
@@ -13,16 +13,16 @@ Use `$nimri-feature-workflow` first when creating or extending a feature across 
 
 | Goal | Command |
 | --- | --- |
-| Develop and run | `./app.sh dev` |
-| Run the application | `./app.sh run` |
-| Serialize RPC metadata | `./app.sh serialize` |
-| Generate frontend bindings | `./app.sh generate` |
-| Run project tests | `./app.sh test` |
-| Build a release | `./app.sh build` |
+| Develop and run | `npm run dev` |
+| Run the application | `npm start` |
+| Serialize RPC metadata | `npm run serialize` |
+| Generate frontend bindings | `npm run generate` |
+| Run project tests | `npm test` |
+| Build a release | `npm run build` |
 
 ## Workflow
 
-After changing an accessible command or RPC type, use `./app.sh dev` to refresh bindings and run the application. Use `serialize` or `generate` only for an explicit intermediate step.
+After changing an accessible command or RPC type, use `npm run dev` to refresh bindings and run the application. Use `serialize` or `generate` only for an explicit intermediate step.
 
 ## CRITICAL
-Use `/app.sh test` ONLY IF you maintain core nimri framework. You don't have to use this command during app development.
+Use `npm test` ONLY IF you maintain core nimri framework. You don't have to use this command during app development.

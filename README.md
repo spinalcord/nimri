@@ -14,26 +14,24 @@ Install the frontend dependencies and start the app:
 
 ```sh
 nimble install
-npm --prefix frontend install
-./app.sh dev
+npm install
+npm run dev
 ```
-
-On Windows, use `.\app.ps1 dev` in PowerShell instead.
 
 The development command compiles the Nim application, starts Vite, and opens the desktop window. For a release build, run:
 
 ```sh
-./app.sh build
+npm run build
 ```
 
-The build output is written to `bin/main`. On Windows, `.\app.ps1 build` writes
-`bin\main.exe` and its required MinGW runtime DLLs. The compiled frontend is
-embedded in the binary.
+The build output is written to `bin/main` on Linux. On Windows, it writes
+`bin\main.exe` and its required MinGW runtime DLLs. The compiled frontend is embedded
+in the binary.
 
 ## Add a feature
 
 Treat a feature as one vertical slice: define its RPC contract and commands in
-`backend/features/<feature>/`, generate the bindings with `./app.sh dev`, then
+`backend/features/<feature>/`, generate the bindings with `npm run dev`, then
 connect the generated API to a Svelte component. Do not edit files below
 `frontend/generated/` manually.
 
@@ -90,14 +88,14 @@ Import the command and use it like a typed async function:
 ## Development commands
 
 ```sh
-./app.sh generate   # Generate Frontend Data
-./app.sh run        # Run the app
-./app.sh dev        # Start the development workflow
-./app.sh build      # Create a release build
+npm run generate   # Generate Frontend Data
+npm start          # Run the app
+npm run dev        # Start the development workflow
+npm run build      # Create a release build
 ```
 
-On Windows, use the corresponding `.\app.ps1` command. Both scripts also
-support `serialize` and `test`.
+The same commands work on Linux and Windows. The explicit `npm run run` alias
+is also available, along with `npm run serialize` and `npm test`.
 
 Most of the time you need propably `generate` and `dev`.
 

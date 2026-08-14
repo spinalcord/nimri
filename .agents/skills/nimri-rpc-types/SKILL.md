@@ -14,7 +14,7 @@ For work that spans a complete backend-to-Svelte feature, start with `$nimri-fea
 1. Read [rpc-types.md](references/rpc-types.md) before defining a command contract.
 2. Prefer an enum to a string value set.
 3. Export every object, tuple alias, enum, and field required in TypeScript.
-4. After contract changes, run `./app.sh dev` and import generated types from
+4. After contract changes, run `npm run dev` and import generated types from
    `rpc/types`.
 5. Keep serialization constraints in the public contract; do not rely on a representation that only happens to work locally.
 

@@ -11,6 +11,7 @@ nimcache/
 /tests/test_frontend_e2e
 main
 # Frontend dependencies, build output, and tool caches
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/

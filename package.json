@@ -1,0 +1,17 @@
+{
+  "name": "nimri-desktop-framework",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "start": "node scripts/app.mjs run",
+    "run": "node scripts/app.mjs run",
+    "dev": "node scripts/app.mjs dev",
+    "serialize": "node scripts/app.mjs serialize",
+    "generate": "node scripts/app.mjs generate",
+    "build": "node scripts/app.mjs build",
+    "test": "node scripts/app.mjs test"
+  }
+}
