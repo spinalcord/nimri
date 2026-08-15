@@ -6,6 +6,7 @@ import {
   rm,
   stat,
 } from 'node:fs/promises';
+import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import {
   basename,
@@ -54,6 +55,9 @@ const viteCli = join(
   'bin',
   'vite.js',
 );
+const viteHost = '127.0.0.1';
+const vitePort = 5173;
+const viteRetryDelay = 100;
 const sidecarResourceDirectory = join(
   projectDirectory,
   '.nimcache',
@@ -142,36 +146,84 @@ async function runApplicationMode(mode) {
   await runProcess(applicationBinary, [mode]);
 }
 
+function isViteReachable() {
+  return new Promise((resolveReachable) => {
+    const socket = createConnection({
+      host: viteHost,
+      port: vitePort,
+    });
+    const finish = (reachable) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolveReachable(reachable);
+    };
+
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+  });
+}
+
 function waitForVite(viteProcess) {
   return new Promise((resolveReady, rejectReady) => {
     let settled = false;
+    let retryTimer = null;
+    let socket = null;
+
+    const cleanup = () => {
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      if (socket !== null) {
+        socket.removeAllListeners();
+        socket.destroy();
+        socket = null;
+      }
+      viteProcess.removeListener('error', handleViteError);
+      viteProcess.removeListener('close', handleViteClose);
+    };
     const finish = (callback, value) => {
       if (settled) {
         return;
       }
       settled = true;
+      cleanup();
       callback(value);
     };
-    viteProcess.stdout.setEncoding('utf8');
-    viteProcess.stderr.setEncoding('utf8');
-    viteProcess.stdout.on('data', (chunk) => {
-      process.stdout.write(chunk);
-      if (chunk.includes('http://127.0.0.1:5173/')) {
-        finish(resolveReady);
-      }
-    });
-    viteProcess.stderr.on('data', (chunk) => process.stderr.write(chunk));
-    viteProcess.on('error', (error) => finish(
+    const handleViteError = (error) => finish(
       rejectReady,
       new ProcessError(`Failed to start Vite: ${error.message}`),
-    ));
-    viteProcess.on('close', (exitCode, signal) => finish(
+    );
+    const handleViteClose = (exitCode, signal) => finish(
       rejectReady,
       new ProcessError(
         `Vite stopped before becoming ready (${signal ?? exitCode}).`,
         exitCode ?? 1,
       ),
-    ));
+    );
+    const attemptConnection = () => {
+      retryTimer = null;
+      const connection = createConnection({
+        host: viteHost,
+        port: vitePort,
+      });
+      socket = connection;
+      connection.once('connect', () => finish(resolveReady));
+      connection.once('error', () => {
+        connection.removeAllListeners();
+        connection.destroy();
+        if (socket === connection) {
+          socket = null;
+        }
+        if (!settled) {
+          retryTimer = setTimeout(attemptConnection, viteRetryDelay);
+        }
+      });
+    };
+
+    viteProcess.once('error', handleViteError);
+    viteProcess.once('close', handleViteClose);
+    attemptConnection();
   });
 }
 
@@ -197,11 +249,17 @@ async function runDevelopment() {
   await compileApplication();
   await runProcess(applicationBinary, ['generate']);
 
+  if (await isViteReachable()) {
+    throw new ProcessError(
+      `Failed to start Vite: ${viteHost}:${vitePort} is already in use.`,
+    );
+  }
+
   const viteProcess = spawn(process.execPath, [viteCli], {
     cwd: frontendDirectory,
     env: process.env,
     shell: false,
-    stdio: ['inherit', 'pipe', 'pipe'],
+    stdio: 'inherit',
   });
   let electronProcess = null;
   let interrupted = false;
