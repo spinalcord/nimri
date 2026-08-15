@@ -6,6 +6,7 @@ import {
   rm,
   stat,
 } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import {
@@ -27,13 +28,6 @@ const electronCli = join(
   'node_modules',
   'electron',
   'cli.js',
-);
-const electronRuntime = join(
-  projectDirectory,
-  'node_modules',
-  'electron',
-  'dist',
-  isWindows ? 'electron.exe' : 'electron',
 );
 const forgeCli = join(
   projectDirectory,
@@ -388,6 +382,7 @@ async function getWindowsBuildEnvironment() {
 
 async function buildApplication() {
   const binDirectory = join(projectDirectory, 'bin');
+  const electronRuntime = createRequire(import.meta.url)('electron');
   const buildDirectory = await mkdtemp(join(tmpdir(), 'nimri-build-'));
   let environment = process.env;
   let runtimeDirectory = null;
