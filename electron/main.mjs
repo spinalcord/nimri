@@ -6,6 +6,7 @@ import {
   app,
   BrowserWindow,
   ipcMain,
+  Menu,
   protocol,
   session,
 } from 'electron';
@@ -497,6 +498,7 @@ app.on('before-quit', (event) => {
 app.on('window-all-closed', () => app.quit());
 
 async function startApplication() {
+  Menu.setApplicationMenu(null);
   installSessionSecurity();
   if (!isDevelopment) {
     installReleaseProtocol();

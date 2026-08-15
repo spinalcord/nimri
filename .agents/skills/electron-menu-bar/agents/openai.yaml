@@ -1,0 +1,4 @@
+interface:
+  display_name: "Electron Menu Bar"
+  short_description: "Toggle the native Electron menu bar"
+  default_prompt: "Use $electron-menu-bar to remove or restore the native Electron menu bar."
