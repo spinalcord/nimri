@@ -22,5 +22,9 @@
     "tslib": "^2.8.1",
     "typescript": "^5.9.3",
     "vite": "^8.1.5"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-linux-x64-gnu": "1.1.5",
+    "@rolldown/binding-win32-x64-msvc": "1.1.5"
   }
 }
