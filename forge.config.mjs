@@ -1,0 +1,35 @@
+const sidecarDirectory = '.nimcache/electron-resources/sidecar';
+
+export default {
+  outDir: 'bin',
+  packagerConfig: {
+    name: 'Nimri',
+    executableName: 'Nimri',
+    asar: true,
+    prune: true,
+    tmpdir: false,
+    extraResource: [sidecarDirectory],
+    ignore: [
+      /^\/.agents(?:\/|$)/,
+      /^\/.codex(?:\/|$)/,
+      /^\/.git(?:\/|$)/,
+      /^\/.gitattributes$/,
+      /^\/.gitignore$/,
+      /^\/.nimcache(?:\/|$)/,
+      /^\/AGENTS\.md$/,
+      /^\/README\.md$/,
+      /^\/backend(?:\/|$)/,
+      /^\/bin(?:\/|$)/,
+      /^\/config\.nims$/,
+      /^\/forge\.config\.mjs$/,
+      /^\/node_modules(?:\/|$)/,
+      /^\/scripts(?:\/|$)/,
+      /^\/tests(?:\/|$)/,
+      /^\/frontend\/(?!dist(?:\/|$))/,
+      /^\/main(?:\.exe)?$/,
+      /\.nim$/,
+      /\.nimble$/,
+    ],
+  },
+  makers: [],
+};

@@ -8,11 +8,9 @@ when isMainModule:
   elif arguments == @["generate"]:
     serializeFrontendBindings()
     generateFrontendBindings()
-  elif arguments.len == 0 or arguments == @["run"]:
-    serializeFrontendBindings()
-    generateFrontendBindings()
-    runApp()
+  elif arguments == @["serve"]:
+    serveApp()
   else:
     stderr.writeLine("Usage: " & getAppFilename().extractFilename &
-      " [serialize|generate|run]")
+      " [serialize|generate|serve]")
     quit(2)

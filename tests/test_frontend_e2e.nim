@@ -1,193 +1,102 @@
-import std/[asyncdispatch, json, strutils]
-import webui
-import webui/bindings
+import std/[json, os, osproc, streams, unittest]
 
-# Importing the aggregator registers the production frontend commands.
-{.push warning[UnusedImport]: off.}
-import ../backend/core/commands
-{.pop.}
+const ExpectedGreeting = "Hello, Mara – directly from Nim!"
 
-import ../backend/core/nimri_rpc
+proc readMessage(process: Process): JsonNode =
+  let line = process.outputStream.readLine()
+  if line.len == 0:
+    raise newException(IOError, "The sidecar closed its protocol output")
+  result = parseJson(line)
 
-when not defined(release):
-  import std/[net, os, osproc]
+proc sendMessage(process: Process, message: JsonNode) =
+  process.inputStream.writeLine($message)
+  process.inputStream.flush()
 
-when defined(release):
-  import ../backend/core/embedded_frontend_assets
+suite "Electron sidecar protocol":
+  test "invokes commands and completes streams over standard IO":
+    let sidecarPath = getEnv("NIMRI_TEST_SIDECAR")
+    require sidecarPath.len > 0
+    require fileExists(sidecarPath)
 
-const
-  WebUiBridgePort = 7681
-  ExpectedGreeting = "Hello, Mara – directly from Nim!"
-  ExpectedAsyncValue = "Async RPC completed"
-
-when not defined(release):
-  const
-    ProjectRoot = currentSourcePath().parentDir.parentDir
-    FrontendDir = ProjectRoot / "frontend"
-    DevServerHost = "127.0.0.1"
-    DevServerPort = 5173
-
-when not defined(release):
-  proc portIsReady(port: int): bool =
-    var socket = newSocket()
+    let sidecar = startProcess(
+      sidecarPath,
+      workingDir = sidecarPath.parentDir,
+      args = ["serve"],
+      options = {poUsePath}
+    )
     try:
-      socket.connect(DevServerHost, Port(port), timeout = 200)
-      result = true
-    except CatchableError:
-      result = false
+      check readMessage(sidecar)["kind"].getStr() == "ready"
+
+      sendMessage(sidecar, %* {
+        "kind": "invoke",
+        "requestId": "sync-request",
+        "command": "greeting.greet",
+        "args": {"name": "Mara"},
+      })
+      let resultMessage = readMessage(sidecar)
+      check resultMessage["kind"].getStr() == "result"
+      check resultMessage["requestId"].getStr() == "sync-request"
+      check resultMessage["ok"].getBool()
+      check resultMessage["value"]["message"].getStr() == ExpectedGreeting
+
+      sendMessage(sidecar, %* {
+        "kind": "invoke",
+        "requestId": "future-request",
+        "command": "greeting.determineEnumType",
+        "args": {"someEnumType": "Bar"},
+      })
+      let futureAccepted = readMessage(sidecar)
+      check futureAccepted["kind"].getStr() == "accepted"
+      check futureAccepted["requestId"].getStr() == "future-request"
+      let futureResult = readMessage(sidecar)
+      check futureResult["kind"].getStr() == "result"
+      check futureResult["requestId"].getStr() == "future-request"
+      check futureResult["ok"].getBool()
+      check futureResult["value"].getStr() == "Bar"
+
+      sendMessage(sidecar, %* {
+        "kind": "invoke",
+        "requestId": "stream-request",
+        "command": "greeting.streamMessages",
+        "args": {},
+      })
+      let acceptedMessage = readMessage(sidecar)
+      check acceptedMessage["kind"].getStr() == "accepted"
+      check acceptedMessage["requestId"].getStr() == "stream-request"
+
+      var values: seq[string]
+      while true:
+        let streamMessage = readMessage(sidecar)
+        check streamMessage["requestId"].getStr() == "stream-request"
+        if streamMessage["kind"].getStr() == "streamComplete":
+          break
+        check streamMessage["kind"].getStr() == "streamValue"
+        values.add(streamMessage["value"].getStr())
+      check values == @[
+        "First message",
+        "Second message",
+        "Third message",
+      ]
+
+      sendMessage(sidecar, %* {
+        "kind": "invoke",
+        "requestId": "canceled-stream",
+        "command": "greeting.streamMessages",
+        "args": {},
+      })
+      check readMessage(sidecar)["kind"].getStr() == "accepted"
+      sendMessage(sidecar, %* {
+        "kind": "cancel",
+        "requestId": "canceled-stream",
+      })
+      while true:
+        let cancellationMessage = readMessage(sidecar)
+        check cancellationMessage["requestId"].getStr() == "canceled-stream"
+        if cancellationMessage["kind"].getStr() == "result":
+          check cancellationMessage["ok"].getBool()
+          break
+        check cancellationMessage["kind"].getStr() == "streamValue"
     finally:
-      socket.close()
-
-  proc waitForPort(process: Process, port: int) =
-    for _ in 0 ..< 100:
-      if not process.running:
-        raise newException(IOError,
-          "Vite stopped with exit code " & $process.peekExitCode)
-      if portIsReady(port):
-        return
-      sleep(100)
-    raise newException(IOError, "Timed out waiting for Vite")
-
-proc delayedE2eValue(value: string): Future[string] {.async, accessible.} =
-  await sleepAsync(150)
-  result = value
-
-let window = webui.newWindow()
-window.hidden = true
-window.port = WebUiBridgePort
-bindFrontendCommands(window)
-
-when defined(release):
-  window.fileHandler = proc(filename: string): string =
-    let urlPath = if filename.startsWith('/'): filename else: "/" & filename
-    embeddedFrontendAsset(urlPath)
-  doAssert window.show("index.html", bindings.Browsers.Chromium),
-    "WebUI could not open the release frontend"
-else:
-  var viteProcess: Process
-  try:
-    viteProcess = startProcess(
-      "node",
-      workingDir = FrontendDir,
-      args = ["node_modules/vite/bin/vite.js"],
-      options = {poUsePath, poParentStreams}
-    )
-    waitForPort(viteProcess, DevServerPort)
-    doAssert window.show(
-      "http://" & DevServerHost & ":" & $DevServerPort,
-      bindings.Browsers.Chromium
-    ), "WebUI could not open the Vite frontend"
-  except:
-    if viteProcess != nil:
-      if viteProcess.running:
-        viteProcess.terminate()
-        discard viteProcess.waitForExit(2_000)
-      viteProcess.close()
-    raise
-
-proc verifyFrontend(): Future[void] {.async.} =
-  try:
-    let clickResult = window.script(
-      "document.querySelector('button')?.click(); return true;",
-      timeout = 2
-    )
-    doAssert not clickResult.error, "Could not click the RPC button"
-
-    var renderedGreeting = ""
-    for _ in 0 ..< 50:
-      let response = window.script(
-        "return document.body.textContent ?? '';",
-        timeout = 2
-      )
-      if not response.error:
-        renderedGreeting = response.data
-        if ExpectedGreeting in renderedGreeting:
-          break
-      await sleepAsync(100)
-
-    doAssert ExpectedGreeting in renderedGreeting,
-      "Expected the Nim greeting, got: " & renderedGreeting & ". Body: " &
-        window.script("return document.body.textContent;", timeout = 2).data
-
-    let asyncLaunch = window.script("""
-      if (typeof window.__invoke !== 'function') return false;
-      const requestId = crypto.randomUUID();
-      const originalCompletion = window.__nimriRpcComplete;
-      window.__nimriE2eAsync = {
-        requestId,
-        response: null,
-        bridgeResponses: null,
-      };
-      window.__nimriRpcComplete = (completedId, response) => {
-        if (completedId === requestId) {
-          window.__nimriE2eAsync.response = response;
-        }
-        originalCompletion?.(completedId, response);
-      };
-      const request = JSON.stringify({
-        requestId,
-        command: 'test_frontend_e2e.delayedE2eValue',
-        args: { value: 'Async RPC completed' },
-      });
-      void Promise.all([
-        window.__invoke(request),
-        window.__invoke(request),
-      ]).then((responses) => {
-        window.__nimriE2eAsync.bridgeResponses =
-          responses.map((response) => JSON.parse(response));
-      });
-      document.querySelector('h1').textContent = 'UI remained responsive';
-      return document.querySelector('h1').textContent ===
-        'UI remained responsive';
-    """, timeout = 2)
-    doAssert not asyncLaunch.error and asyncLaunch.data == "true",
-      "The frontend did not remain responsive while starting async RPC"
-
-    var asyncState = newJNull()
-    for _ in 0 ..< 50:
-      let response = window.script(
-        "return JSON.stringify(window.__nimriE2eAsync);",
-        timeout = 2
-      )
-      if not response.error:
-        asyncState = parseJson(response.data)
-        if asyncState["response"].kind != JNull and
-            asyncState["bridgeResponses"].kind != JNull:
-          break
-      await sleepAsync(20)
-
-    var
-      acceptedCount = 0
-      duplicateCount = 0
-    for bridgeResponse in asyncState["bridgeResponses"]:
-      if bridgeResponse.hasKey("kind") and
-          bridgeResponse["kind"].getStr() == "accepted":
-        inc acceptedCount
-      elif not bridgeResponse["ok"].getBool() and
-          "Duplicate frontend request ID" in
-            bridgeResponse["error"].getStr():
-        inc duplicateCount
-    doAssert acceptedCount == 1 and duplicateCount == 1,
-      "Duplicate async request IDs were not rejected before acceptance"
-    doAssert asyncState["response"]["ok"].getBool(),
-      "The async command returned an error"
-    doAssert asyncState["response"]["value"].getStr() == ExpectedAsyncValue,
-      "The async completion was routed to the wrong request"
-  finally:
-    window.close()
-
-let verification = verifyFrontend()
-
-try:
-  runFrontendEventLoop(window)
-  verification.read()
-  echo "Frontend E2E passed: " & ExpectedGreeting
-finally:
-  window.close()
-  webui.clean()
-  when not defined(release):
-    if viteProcess != nil:
-      if viteProcess.running:
-        viteProcess.terminate()
-        discard viteProcess.waitForExit(2_000)
-      viteProcess.close()
+      sidecar.inputStream.close()
+      check sidecar.waitForExit(2_000) == 0
+      sidecar.close()

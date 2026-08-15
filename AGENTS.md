@@ -1,6 +1,6 @@
 # Nim–Svelte Desktop Framework
 
-> **TL;DR:** A WebUI desktop application Microframework with a Svelte frontend and a Nim backend, connected by generated, type-safe synchronous RPC bindings. Inspired by Tauri.
+> **TL;DR:** An Electron desktop application microframework with a Svelte frontend and a Nim sidecar backend, connected by generated, type-safe RPC bindings over standard IO. Inspired by Tauri.
 
 - You are a Nim (>2.0) programming expert with years of expierience.
 - Use Nim >2.0 syntax and features

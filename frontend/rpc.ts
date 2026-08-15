@@ -1,14 +1,3 @@
-// FIX: Remove the unused RPC response type.
-
-enum BridgeResponseKind {
-  Accepted = 'accepted',
-}
-
-type AcceptedResponse = {
-  kind: BridgeResponseKind.Accepted;
-  requestId: string;
-};
-
 type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
@@ -28,47 +17,8 @@ export interface NimriStream<T> extends AsyncIterableIterator<T> {
   cancel(): Promise<void>;
 }
 
-type WebUiWindow = Window & {
-  __invoke?: (request: string) => Promise<string> | string;
-  __nimriRpcCancel?: (requestId: string) => Promise<string> | string;
-  __nimriRpcComplete?: (requestId: string, response: unknown) => void;
-  __nimriRpcStreamEvent?: (requestId: string, event: unknown) => void;
-};
-
-const BRIDGE_STARTUP_TIMEOUT_MS = 2_000;
-const BRIDGE_RETRY_DELAY_MS = 20;
 const pendingRequests = new Map<string, PendingRequest>();
 const activeStreams = new Map<string, NimriStreamImplementation<unknown>>();
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-async function callBridge(
-  bindingName: '__invoke' | '__nimriRpcCancel',
-  payload: string,
-): Promise<string> {
-  const deadline = Date.now() + BRIDGE_STARTUP_TIMEOUT_MS;
-
-  while (Date.now() < deadline) {
-    const bridge = (window as WebUiWindow)[bindingName];
-    if (typeof bridge === 'function') {
-      try {
-        return await bridge(payload);
-      } catch (reason) {
-        const bridgeIsConnecting = reason instanceof Error
-          && reason.message === 'WebSocket is not connected';
-        if (!bridgeIsConnecting) {
-          throw reason;
-        }
-      }
-    }
-
-    await delay(BRIDGE_RETRY_DELAY_MS);
-  }
-
-  throw new Error('The WebUI bridge is unavailable.');
-}
 
 function asError(reason: unknown): Error {
   return reason instanceof Error ? reason : new Error(String(reason));
@@ -79,73 +29,36 @@ function protocolError(requestId: string, message: string): void {
   if (!pending) {
     return;
   }
-
   pendingRequests.delete(requestId);
   pending.reject(new Error(message));
 }
 
-function completeRequest(requestId: string, response: unknown): void {
-  const pending = pendingRequests.get(requestId);
+function completeRequest(response: NimriResultResponse): void {
+  const pending = pendingRequests.get(response.requestId);
   if (!pending) {
     return;
   }
 
-  if (typeof response !== 'object' || response === null
-      || !('ok' in response) || typeof response.ok !== 'boolean') {
-    protocolError(requestId, 'The Nim RPC response has an invalid shape.');
-    return;
-  }
-
+  pendingRequests.delete(response.requestId);
   if (response.ok) {
-    if (!('value' in response)) {
-      protocolError(requestId, 'The Nim RPC response has no value.');
-      return;
-    }
-    pendingRequests.delete(requestId);
     pending.resolve(response.value);
-    return;
+  } else {
+    pending.reject(new Error(response.error));
   }
-
-  if (!('error' in response) || typeof response.error !== 'string') {
-    protocolError(requestId, 'The Nim RPC error response is invalid.');
-    return;
-  }
-  pendingRequests.delete(requestId);
-  pending.reject(new Error(response.error));
 }
 
-function handleBridgeResponse(requestId: string, rawResponse: string): void {
-  if (!pendingRequests.has(requestId)) {
-    return;
-  }
-
-  let response: unknown;
-  try {
-    response = JSON.parse(rawResponse) as unknown;
-  } catch {
-    protocolError(requestId, 'The Nim RPC response is not valid JSON.');
-    return;
-  }
-
-  if (typeof response === 'object' && response !== null
-      && 'kind' in response) {
-    const accepted = response as Partial<AcceptedResponse>;
-    if (accepted.kind !== BridgeResponseKind.Accepted
-        || accepted.requestId !== requestId) {
-      protocolError(requestId, 'The Nim RPC acceptance response is invalid.');
-    }
-    return;
-  }
-
-  completeRequest(requestId, response);
-}
-
-(window as WebUiWindow).__nimriRpcComplete = (
+function handleInvokeResponse(
   requestId: string,
-  response: unknown,
-): void => {
-  completeRequest(requestId, response);
-};
+  response: NimriAcceptedResponse | NimriResultResponse,
+): void {
+  if (response.requestId !== requestId) {
+    protocolError(requestId, 'The Nim RPC response has the wrong requestId.');
+    return;
+  }
+  if (response.kind === 'result') {
+    completeRequest(response);
+  }
+}
 
 class NimriStreamImplementation<T> implements NimriStream<T> {
   private requestId: string | null = null;
@@ -176,7 +89,6 @@ class NimriStreamImplementation<T> implements NimriStream<T> {
     if (!this.iteratorClaimed) {
       this.directReadStarted = true;
     }
-
     if (this.values.length > 0) {
       return Promise.resolve({ value: this.values.shift()!, done: false });
     }
@@ -211,7 +123,6 @@ class NimriStreamImplementation<T> implements NimriStream<T> {
     this.canceled = true;
     this.values.length = 0;
     this.resolvePendingDone();
-
     if (this.requestId === null || this.startPromise === null) {
       this.cancelPromise = Promise.resolve();
       return this.cancelPromise;
@@ -223,16 +134,13 @@ class NimriStreamImplementation<T> implements NimriStream<T> {
       if (!accepted) {
         return;
       }
-      const rawResponse = await callBridge('__nimriRpcCancel', requestId);
-      let response: unknown;
-      try {
-        response = JSON.parse(rawResponse) as unknown;
-      } catch {
-        throw new Error('The Nim RPC cancellation response is not valid JSON.');
-      }
-      if (typeof response !== 'object' || response === null
-          || !('ok' in response) || response.ok !== true) {
-        throw new Error('The Nim RPC cancellation response is invalid.');
+      const response = await window.nimri.cancel(requestId);
+      if (response.requestId !== requestId || !response.ok) {
+        throw new Error(
+          response.ok
+            ? 'The Nim RPC cancellation response is invalid.'
+            : response.error,
+        );
       }
     });
     return this.cancelPromise;
@@ -242,7 +150,6 @@ class NimriStreamImplementation<T> implements NimriStream<T> {
     if (this.canceled || this.completed || this.terminalError !== null) {
       return;
     }
-
     switch (event.kind) {
       case 'value': {
         const value = event.value as T;
@@ -260,10 +167,19 @@ class NimriStreamImplementation<T> implements NimriStream<T> {
         this.resolvePendingDone();
         break;
       case 'error':
-        this.terminalError = new Error(event.error);
-        this.removeFromActiveStreams();
-        this.rejectPending(this.terminalError);
+        this.fail(new Error(event.error));
         break;
+    }
+  }
+
+  fail(error: Error): void {
+    if (this.canceled || this.completed || this.terminalError !== null) {
+      return;
+    }
+    this.terminalError = error;
+    this.removeFromActiveStreams();
+    for (const pending of this.pendingReads.splice(0)) {
+      pending.reject(error);
     }
   }
 
@@ -271,7 +187,6 @@ class NimriStreamImplementation<T> implements NimriStream<T> {
     if (this.startPromise !== null) {
       return;
     }
-
     this.requestId = crypto.randomUUID();
     activeStreams.set(
       this.requestId,
@@ -284,50 +199,21 @@ class NimriStreamImplementation<T> implements NimriStream<T> {
   }
 
   private async open(requestId: string): Promise<boolean> {
-    let request: string;
-    try {
-      request = JSON.stringify({
-        requestId,
-        command: this.command,
-        args: this.args,
-      });
-    } catch (reason) {
-      throw asError(reason);
+    const response = await window.nimri.invoke({
+      requestId,
+      command: this.command,
+      args: this.args,
+    });
+    if (response.requestId !== requestId) {
+      throw new Error('The Nim RPC stream response has the wrong requestId.');
     }
-
-    const rawResponse = await callBridge('__invoke', request);
-    let response: unknown;
-    try {
-      response = JSON.parse(rawResponse) as unknown;
-    } catch {
-      throw new Error('The Nim RPC stream response is not valid JSON.');
+    if (response.kind === 'accepted') {
+      return true;
     }
-
-    if (typeof response !== 'object' || response === null) {
-      throw new Error('The Nim RPC stream response has an invalid shape.');
-    }
-    if ('kind' in response) {
-      const accepted = response as Partial<AcceptedResponse>;
-      if (accepted.kind === BridgeResponseKind.Accepted
-          && accepted.requestId === requestId) {
-        return true;
-      }
-      throw new Error('The Nim RPC stream acceptance response is invalid.');
-    }
-    if ('ok' in response && response.ok === false
-        && 'error' in response && typeof response.error === 'string') {
+    if (!response.ok) {
       throw new Error(response.error);
     }
-    throw new Error('The Nim RPC stream response has an invalid shape.');
-  }
-
-  private fail(error: Error): void {
-    if (this.canceled || this.completed || this.terminalError !== null) {
-      return;
-    }
-    this.terminalError = error;
-    this.removeFromActiveStreams();
-    this.rejectPending(error);
+    throw new Error('The Nim RPC stream was not accepted.');
   }
 
   private removeFromActiveStreams(): void {
@@ -342,82 +228,57 @@ class NimriStreamImplementation<T> implements NimriStream<T> {
       pending.resolve({ value: undefined, done: true });
     }
   }
-
-  private rejectPending(error: Error): void {
-    for (const pending of this.pendingReads.splice(0)) {
-      pending.reject(error);
-    }
-  }
 }
 
-function parseStreamEvent(event: unknown): StreamEvent | null {
-  if (typeof event !== 'object' || event === null || !('kind' in event)) {
-    return null;
-  }
-  if (event.kind === 'value' && 'value' in event) {
-    return { kind: 'value', value: event.value };
-  }
-  if (event.kind === 'complete') {
-    return { kind: 'complete' };
-  }
-  if (event.kind === 'error'
-      && 'error' in event && typeof event.error === 'string') {
-    return { kind: 'error', error: event.error };
-  }
-  return null;
-}
-
-(window as WebUiWindow).__nimriRpcStreamEvent = (
-  requestId: string,
-  rawEvent: unknown,
-): void => {
-  const stream = activeStreams.get(requestId);
+window.nimri.onResult(completeRequest);
+window.nimri.onStreamEvent((event) => {
+  const stream = activeStreams.get(event.requestId);
   if (!stream) {
     return;
   }
-  const event = parseStreamEvent(rawEvent);
-  if (event === null) {
-    stream.receive({
-      kind: 'error',
-      error: 'The Nim RPC stream event has an invalid shape.',
-    });
-    return;
+  switch (event.kind) {
+    case 'streamValue':
+      stream.receive({ kind: 'value', value: event.value });
+      break;
+    case 'streamComplete':
+      stream.receive({ kind: 'complete' });
+      break;
+    case 'streamError':
+      stream.receive({ kind: 'error', error: event.error });
+      break;
   }
-  stream.receive(event);
-};
+});
+window.nimri.onSidecarError((message) => {
+  const error = new Error(message);
+  for (const pending of pendingRequests.values()) {
+    pending.reject(error);
+  }
+  pendingRequests.clear();
+  for (const stream of activeStreams.values()) {
+    stream.fail(error);
+  }
+  activeStreams.clear();
+});
 
 export function invoke<T>(
   command: string,
   args: Record<string, unknown> = {},
 ): Promise<T> {
   const requestId = crypto.randomUUID();
-
   return new Promise<T>((resolve, reject) => {
     pendingRequests.set(requestId, {
       resolve: (value) => resolve(value as T),
       reject,
     });
-
-    let request: string;
-    try {
-      request = JSON.stringify({ requestId, command, args });
-    } catch (reason) {
-      pendingRequests.delete(requestId);
-      reject(reason instanceof Error ? reason : new Error(String(reason)));
-      return;
-    }
-
-    void callBridge('__invoke', request)
-      .then((rawResponse) => handleBridgeResponse(requestId, rawResponse))
+    void window.nimri.invoke({ requestId, command, args })
+      .then((response) => handleInvokeResponse(requestId, response))
       .catch((reason: unknown) => {
         const pending = pendingRequests.get(requestId);
         if (!pending) {
           return;
         }
         pendingRequests.delete(requestId);
-        pending.reject(
-          asError(reason),
-        );
+        pending.reject(asError(reason));
       });
   });
 }

@@ -1,7 +1,9 @@
 {
   "name": "nimri-desktop-framework",
+  "productName": "Nimri",
   "version": "1.0.0",
   "private": true,
+  "main": "electron/main.mjs",
   "workspaces": [
     "frontend"
   ],
@@ -13,5 +15,13 @@
     "generate": "node scripts/app.mjs generate",
     "build": "node scripts/app.mjs build",
     "test": "node scripts/app.mjs test"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron/packager": "^20.3.0",
+    "electron": "^43.4.0"
+  },
+  "overrides": {
+    "@electron/packager": "^20.3.0"
   }
 }

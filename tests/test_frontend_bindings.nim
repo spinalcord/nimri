@@ -20,16 +20,20 @@ suite "frontend binding generation":
     check readFile(MetadataPath) == first
 
     let metadata = parseJson(first)
-    check metadata["schemaVersion"].getInt() == 3
-    check metadata["commands"].len == 1
-    check metadata["commands"][0]["commandKind"].getStr() == "synchronous"
-    check metadata["commands"][0]["modulePath"].getStr() == "greeting"
-    check metadata["commands"][0]["wireName"].getStr() ==
-      "greeting.greet"
-    check metadata["commands"][0]["nimName"].getStr() == "greet"
-    check metadata["commands"][0]["parameters"][0]["type"]["kind"].getStr() ==
-      "string"
-    check metadata["commands"][0]["returnType"]["kind"].getStr() == "named"
+    check metadata["schemaVersion"].getInt() == 4
+    check metadata["commands"].len == 3
+
+    var greetCommand = newJNull()
+    for command in metadata["commands"]:
+      if command["wireName"].getStr() == "greeting.greet":
+        greetCommand = command
+        break
+    require greetCommand.kind == JObject
+    check greetCommand["commandKind"].getStr() == "synchronous"
+    check greetCommand["modulePath"].getStr() == "greeting"
+    check greetCommand["nimName"].getStr() == "greet"
+    check greetCommand["parameters"][0]["type"]["kind"].getStr() == "string"
+    check greetCommand["returnType"]["kind"].getStr() == "named"
     check metadata["types"][0]["kind"].getStr() == "object"
 
   test "generation reads metadata without changing current output":

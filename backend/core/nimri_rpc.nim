@@ -1,9 +1,8 @@
 import std/[
-  algorithm, asyncdispatch, asyncstreams, atomics, json, locks, macros, math,
-  options, os, sets, strutils, tables
+  algorithm, asyncdispatch, asyncstreams, json, macros, math, options, os,
+  sets, strutils, tables
 ]
 import mustache
-import webui
 
 type
   FrontendCommandKind* = enum
@@ -437,4 +436,4 @@ macro accessible*(definition: untyped): untyped =
     newLit(modulePath), newLit(nimName), newLit(wireName))
 
 include nimri_rpc/bindings_generator
-include nimri_rpc/webui_bridge
+include nimri_rpc/sidecar_transport

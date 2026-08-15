@@ -18,15 +18,35 @@ npm install
 npm run dev
 ```
 
-The development command compiles the Nim application, starts Vite, and opens the desktop window. For a release build, run:
+The development command generates the bindings, compiles the Nim sidecar, starts
+Vite and Electron, and opens the desktop window. Closing the window stops Vite,
+Electron, and the sidecar. For a release build, run:
 
 ```sh
 npm run build
 ```
 
-The build output is written to `bin/main` on Linux. On Windows, it writes
-`bin\main.exe` and its required MinGW runtime DLLs. The compiled frontend is embedded
-in the binary.
+The native build output is a directly runnable Electron application directory
+below `bin/`, such as `bin/Nimri-linux-x64/` on Linux or
+`bin/Nimri-win32-x64/` on Windows. No installer is created. The package contains
+the compiled Svelte assets, the Electron runtime, the Nim sidecar, and—on
+Windows—the required MinGW runtime DLLs.
+
+## Runtime architecture
+
+Electron owns the application lifecycle, the single desktop window, and
+frontend asset delivery. In development it loads Vite from
+`http://127.0.0.1:5173`; a packaged app serves its assets through the internal
+`nimri://app/` protocol. The renderer runs sandboxed, without Node.js
+integration, and can access only the typed `window.nimri` methods exposed by the
+isolated preload script.
+
+Electron starts one bundled Nim sidecar in its internal `serve` mode. RPC uses
+newline-delimited JSON over the process's standard input and output; Nimri does
+not open a bridge port. Protocol output is reserved for RPC messages, while
+backend logs go to standard error. Closing the app closes the sidecar input and
+cancels active streams. If the sidecar exits unexpectedly, pending calls and
+streams fail and Electron shuts down cleanly.
 
 ## Add a feature
 
@@ -91,11 +111,12 @@ Import the command and use it like a typed async function:
 npm run generate   # Generate Frontend Data
 npm start          # Run the app
 npm run dev        # Start the development workflow
-npm run build      # Create a release build
+npm run build      # Package a runnable Electron app below bin/
 ```
 
-The same commands work on Linux and Windows. The explicit `npm run run` alias
-is also available, along with `npm run serialize` and `npm test`.
+The same commands work on Linux and Windows, with builds produced natively on
+their target platform. The explicit `npm run run` alias is also available,
+along with `npm run serialize` and `npm test`.
 
 Most of the time you need propably `generate` and `dev`.
 
