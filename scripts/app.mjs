@@ -6,7 +6,6 @@ import {
   rm,
   stat,
 } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import {
@@ -382,7 +381,6 @@ async function getWindowsBuildEnvironment() {
 
 async function buildApplication() {
   const binDirectory = join(projectDirectory, 'bin');
-  const electronRuntime = createRequire(import.meta.url)('electron');
   const buildDirectory = await mkdtemp(join(tmpdir(), 'nimri-build-'));
   let environment = process.env;
   let runtimeDirectory = null;
@@ -434,7 +432,8 @@ async function buildApplication() {
     }
 
     await rm(binDirectory, { force: true, recursive: true });
-    await runProcess(electronRuntime, [
+    // FIX: Run Forge with Node so Electron does not lock its packaged resources.
+    await runProcess(process.execPath, [
       '--require',
       forgePackagerCompatibility,
       forgeCli,
