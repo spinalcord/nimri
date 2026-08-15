@@ -5,10 +5,6 @@ This project was created to make it fast and enjoyable to build good-looking des
 
 To be clear, I am still figuring out where this project will go. For now, it is a foundation for exploring a simple and productive way to build desktop applications.
 
-## AI Disclaimer
-
-AI was used as an engineering tool, including for parts of the Nim macro implementation, while design decisions and the resulting code were reviewed with long-term maintainability in mind for HUMANS by me e.g. using mustache for template generation. I provide also my `AGENTS.md` and my `Agent Skills` for this project.
-
 ## Quick start
 
 Install the frontend dependencies and start the app:
@@ -52,9 +48,35 @@ streams fail and Electron shuts down cleanly.
 ## Add a feature
 
 Treat a feature as one vertical slice: define its RPC contract and commands in
-`backend/features/<feature>/`, generate the bindings with `npm run dev`, then
-connect the generated API to a Svelte component. Do not edit files below
+`backend/features/<feature>/`, generate the bindings with `npm run generate`,
+then connect the generated API to a Svelte component. Do not edit files below
 `frontend/generated/` manually.
+
+### Backend-to-frontend workflow
+
+Whenever you change backend RPC commands, types, or generation rules, run
+`npm run generate` before working with the corresponding frontend API. This
+keeps `frontend/generated/` aligned with the backend contract and prevents
+stale TypeScript IntelliSense errors.
+
+```mermaid
+flowchart LR
+  subgraph Backend
+    direction TB
+    A[Change RPC command, type, or generation rule]
+    B[Run npm run generate]
+    A --> B
+  end
+
+  subgraph Frontend
+    direction TB
+    C[Update generated TypeScript bindings]
+    D[Use the generated API in Svelte and run npm run dev]
+    C --> D
+  end
+
+  B --> C
+```
 
 Keep the contract and commands together below a feature directory. Named RPC
 types can live in `backend/features/greeting/types.nim`:
@@ -212,3 +234,7 @@ These limits require framework work rather than a local feature implementation.
 ## Status
 
 This is a focused framework for quickly shipping desktop prototypes. The API is intentionally small and opinionated, so feedback, bug reports, and small focused pull requests are welcome.
+
+## AI Disclaimer
+
+AI was used as an engineering tool, including for parts of the Nim macro implementation, while design decisions and the resulting code were reviewed with long-term maintainability in mind for HUMANS by me e.g. using mustache for template generation. I provide also my `AGENTS.md` and my `Agent Skills` for this project.
