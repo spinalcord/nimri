@@ -1,6 +1,7 @@
-# Nim-Svelte Desktop Framework
+# Nim-Svelte Electron Desktop Framework
+![Frontend Electron Example](repository_assets/hero_shot.png)
 
-This project was created to make it fast and enjoyable to build good-looking desktop application prototypes. Tauri already solves this problem, BUT Rust's compile-time guarantees and feedback loop can add friction when the main goal is exploring an idea quickly.
+This project was created to make it fast and enjoyable to build good-looking desktop application. Tauri already solves this problem, BUT Rust's compile-time guarantees and feedback loop can add friction when the main goal is exploring an idea quickly.
 
 To be clear, I am still figuring out where this project will go. For now, it is a foundation for exploring a simple and productive way to build desktop applications.
 

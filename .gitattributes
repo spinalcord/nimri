@@ -1,3 +1,4 @@
 # Exclude development-only files from git archive and source ZIP exports.
 LICENSE export-ignore
 tests/ export-ignore
+repository_assets/ export-ignore
