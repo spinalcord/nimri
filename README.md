@@ -30,8 +30,8 @@ npm run build
 The native build output is a directly runnable Electron application directory
 below `bin/`, such as `bin/Nimri-linux-x64/` on Linux or
 `bin/Nimri-win32-x64/` on Windows. No installer is created. The package contains
-the compiled Svelte assets, the Electron runtime, the Nim sidecar, and—on
-Windows—the required MinGW runtime DLLs.
+the compiled Svelte assets, the Electron runtime, the Nim sidecar, and, on
+Windows, the required MinGW runtime DLLs.
 
 ## Runtime architecture
 
