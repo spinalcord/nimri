@@ -3,8 +3,10 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
+  rename,
   rm,
   stat,
+  writeFile,
 } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -16,10 +18,12 @@ import {
   join,
   resolve,
 } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 
 const projectDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const frontendDirectory = join(projectDirectory, 'frontend');
+const featuresDirectory = join(projectDirectory, 'backend', 'features');
 const isWindows = process.platform === 'win32';
 const applicationBinary = join(projectDirectory, isWindows ? 'main.exe' : 'main');
 const electronCli = join(
@@ -60,11 +64,13 @@ const sidecarResourceDirectory = join(
 const validModes = new Set([
   'serialize',
   'generate',
+  'feature',
   'run',
   'dev',
   'build',
   'test',
 ]);
+const featureNamePattern = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const windowsRuntimeDlls = [
   'libgcc_s_seh-1.dll',
   'libstdc++-6.dll',
@@ -137,6 +143,98 @@ async function compileApplication(options = {}) {
 async function runApplicationMode(mode) {
   await compileApplication();
   await runProcess(applicationBinary, [mode]);
+}
+
+function featureNameToCamelCase(featureName) {
+  return featureName.replace(/-([a-z0-9])/g, (_, character) => (
+    character.toUpperCase()
+  ));
+}
+
+function featureNameToPascalCase(featureName) {
+  const camelCaseName = featureNameToCamelCase(featureName);
+  return camelCaseName[0].toUpperCase() + camelCaseName.slice(1);
+}
+
+function featureNameToModuleName(featureName) {
+  return featureName.replaceAll('-', '_');
+}
+
+function createFeatureTypesSource(typeName) {
+  return `type ${typeName}Result* = object\n  message*: string\n`;
+}
+
+function createFeatureCommandSource(commandName, typeName) {
+  return `import nimri_rpc\nimport ../types\n\nproc ${commandName}*(message: string): ${typeName}Result {.accessible.} =\n  ${typeName}Result(message: message)\n`;
+}
+
+async function shouldGenerateBindings() {
+  const prompt = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const answer = (await prompt.question(
+      'Generate frontend RPC bindings now? [y/N] ',
+    )).trim().toLowerCase();
+    return answer === 'y' || answer === 'yes';
+  } finally {
+    prompt.close();
+  }
+}
+
+async function createFeature(featureName) {
+  if (!featureNamePattern.test(featureName)) {
+    throw new ProcessError(
+      'Feature names must use kebab-case, for example: user-profile.',
+      2,
+    );
+  }
+
+  const moduleName = featureNameToModuleName(featureName);
+  const featureDirectory = join(featuresDirectory, moduleName);
+  const existingFeature = await stat(featureDirectory).catch((error) => {
+    if (error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  });
+  if (existingFeature !== null) {
+    throw new ProcessError(
+      `Feature already exists: backend/features/${moduleName}`,
+      2,
+    );
+  }
+
+  const temporaryDirectory = await mkdtemp(join(
+    featuresDirectory,
+    '.nimri-feature-',
+  ));
+  const stagedFeatureDirectory = join(temporaryDirectory, moduleName);
+  const typeName = featureNameToPascalCase(featureName);
+  const commandName = featureNameToCamelCase(featureName);
+
+  try {
+    await mkdir(join(stagedFeatureDirectory, 'commands'), { recursive: true });
+    await Promise.all([
+      writeFile(
+        join(stagedFeatureDirectory, 'types.nim'),
+        createFeatureTypesSource(typeName),
+      ),
+      writeFile(
+        join(stagedFeatureDirectory, 'commands', `${moduleName}.nim`),
+        createFeatureCommandSource(commandName, typeName),
+      ),
+    ]);
+    await rename(stagedFeatureDirectory, featureDirectory);
+  } finally {
+    await rm(temporaryDirectory, { force: true, recursive: true });
+  }
+
+  console.log(`Created feature: backend/features/${moduleName}`);
+  if (await shouldGenerateBindings()) {
+    await runApplicationMode('generate');
+  }
 }
 
 function isViteReachable() {
@@ -451,13 +549,32 @@ async function buildApplication() {
 
 async function main() {
   const [mode, ...remainingArguments] = process.argv.slice(2);
-  if (!validModes.has(mode) || remainingArguments.length > 0) {
+  if (!validModes.has(mode)) {
     console.error(
       'Usage: node scripts/app.mjs '
-      + '[serialize|generate|run|dev|build|test]',
+      + '[serialize|generate|run|dev|build|test]\n'
+      + '       node scripts/app.mjs feature <feature-name>',
     );
     process.exitCode = 2;
     return;
+  }
+
+  if (mode === 'feature') {
+    if (remainingArguments.length !== 1) {
+      throw new ProcessError(
+        'Usage: npm run feature -- <feature-name>',
+        2,
+      );
+    }
+    await createFeature(remainingArguments[0]);
+    return;
+  }
+
+  if (remainingArguments.length > 0) {
+    throw new ProcessError(
+      `The ${mode} command does not accept arguments.`,
+      2,
+    );
   }
 
   if (mode === 'serialize' || mode === 'generate') {
