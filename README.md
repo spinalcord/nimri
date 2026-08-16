@@ -48,9 +48,23 @@ streams fail and Electron shuts down cleanly.
 ## Add a feature
 
 Treat a feature as one vertical slice: define its RPC contract and commands in
-`backend/features/<feature>/`, generate the bindings with `npm run generate`,
-then connect the generated API to a Svelte component. Do not edit files below
-`frontend/generated/` manually.
+`backend/features/<feature>/`, then `npm run generate`, this generates the TypeScript
+binding.
+
+### Create a backend feature scaffold
+
+Create a new feature with:
+
+```sh
+npm run feature some-feature
+```
+
+The name must use kebab-case. Nim module names cannot contain hyphens, so the
+generator creates `backend/features/some_feature/` with
+`commands/some_feature.nim`. It provides an accessible `someFeature` echo stub
+and a `SomeFeatureResult` RPC type, then asks whether to run `npm run generate`.
+The command aborts without changes if that generated feature directory already
+exists.
 
 ### Backend-to-frontend workflow
 
@@ -63,19 +77,17 @@ stale TypeScript IntelliSense errors.
 flowchart LR
   subgraph Backend
     direction TB
-    A[Change RPC command, type, or generation rule]
-    B[Run npm run generate]
+    A[Create feature]
+    B[Run `npm run generate`]
     A --> B
   end
 
   subgraph Frontend
     direction TB
-    C[Update generated TypeScript bindings]
-    D[Use the generated API in Svelte and run npm run dev]
-    C --> D
+    D[Run `npm run dev` and \n use the TypeScript bindings.]
   end
 
-  B --> C
+  B --> D
 ```
 
 Keep the contract and commands together below a feature directory. Named RPC
@@ -131,8 +143,8 @@ Import the command and use it like a typed async function:
 ## Development commands
 
 ```sh
+npm run feature some-feature # Create a backend feature scaffold
 npm run generate   # Generate Frontend Data
-npm start          # Run the app
 npm run dev        # Start the development workflow
 npm run build      # Package a runnable Electron app below bin/
 ```
