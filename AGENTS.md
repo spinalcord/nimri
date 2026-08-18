@@ -12,4 +12,4 @@ Electron + Svelte frontend with a Nim 2+ sidecar and generated typed RPC.
 
 ## CRITICAL
 
-Broad searches must exclude `nim/backend/core/`, `frontend/node_modules/`, `.nimchache/`, and `tests/`. Read them only for Nimri framework work or when a task-relevant fact cannot be verified elsewhere.
+Broad searches must exclude `nim/backend/core/`, `frontend/node_modules/`, `.nimchache/`, `tests/`, and `scripts/app.mjs`. Do not read `scripts/app.mjs` for routine feature, UI, or backend work; read it only when changing or diagnosing npm scripts, the dev/build workflow, packaging, or when a task-relevant fact cannot be verified elsewhere. Read the other excluded paths only for Nimri framework work or when a task-relevant fact cannot be verified elsewhere.
