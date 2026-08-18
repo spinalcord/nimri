@@ -1,13 +1,11 @@
 ---
 name: nimri-development
-description: Run, test, generate, build, or diagnose a Nimri desktop application through npm, including RPC generation, frontend contract tests, development startup, and release builds.
+description: Use only to start, generate, test, build, or diagnose a Nimri application. Covers npm execution and runtime checks, not ordinary feature implementation.
 ---
 
 # Nimri Development
 
-Run npm commands from the repository root.
-
-Use `$nimri-feature-workflow` first when creating or extending a feature across the backend and Svelte UI.
+Run commands from the repository root. Use `$nimri-feature-workflow` for backend-to-Svelte feature work.
 
 ## Commands
 
@@ -20,9 +18,4 @@ Use `$nimri-feature-workflow` first when creating or extending a feature across 
 | Run project tests | `npm test` |
 | Build a release | `npm run build` |
 
-## Workflow
-
-After changing an accessible command or RPC type, use `npm run dev` to refresh bindings and run the application. Use `serialize` or `generate` only for an explicit intermediate step.
-
-## CRITICAL
-Use `npm test` ONLY IF you maintain core nimri framework. You don't have to use this command during app development.
+`npm run dev` refreshes RPC bindings and starts the application. Use `serialize` or `generate` only when an explicit intermediate step is needed.

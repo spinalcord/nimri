@@ -1,26 +1,21 @@
 ---
 name: nimri-rpc-types
-description: Design, implement, review, or diagnose Nimri RPC data contracts, including exported objects, enums, named tuples, Option, sequences, arrays, Table, and OrderedTable values used from Svelte.
+description: Use only for new nontrivial or failing Nimri RPC contracts involving nested containers, exported objects, enums, tuples, tables, serialization, or binding generation.
 ---
 
 # Nimri RPC Types
 
-Use only supported RPC types; export public types and object fields.
-
-For work that spans a complete backend-to-Svelte feature, start with `$nimri-feature-workflow`.
+Start complete features with `$nimri-feature-workflow`. Use supported RPC types and export public types and fields.
 
 ## Workflow
 
-1. Read [rpc-types.md](references/rpc-types.md) before defining a command contract.
+1. Read [rpc-types.md](references/rpc-types.md) before designing a nontrivial contract or diagnosing representation or generation.
 2. Prefer an enum to a string value set.
-3. Export every object, tuple alias, enum, and field required in TypeScript.
-4. After contract changes, run `npm run dev` and import generated types from
-   `rpc/types`.
-5. Keep serialization constraints in the public contract; do not rely on a representation that only happens to work locally.
+3. Export every object, named tuple, enum, and field needed in TypeScript.
+4. Run `npm run dev` and import generated types from `rpc/types`.
 
 ## Guardrails
 
-- Use only named tuples; export every tuple alias used by an RPC command.
-- Use `Table[string, T]` or `OrderedTable[string, T]` only for object-style JSON keys; ordering is not guaranteed.
+- Use only named tuples and string-keyed tables; table order is not guaranteed.
 - Keep integers in JavaScript's safe range and floats finite.
-- Do not use references, pointers, inheritance, variant objects, object default fields, positional tuples, or non-string table keys across RPC.
+- Do not expose references, pointers, inheritance, variant objects, object field defaults, positional tuples, or non-string table keys.

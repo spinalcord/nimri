@@ -45,115 +45,60 @@ backend logs go to standard error. Closing the app closes the sidecar input and
 cancels active streams. If the sidecar exits unexpectedly, pending calls and
 streams fail and Electron shuts down cleanly.
 
+## Included showcase
+
+The running app is a single minimal showcase in `backend/features/showcase/`.
+It demonstrates three generated, fully typed RPC shapes:
+
+- `frameworkInfo()` is an immediate command returning `ShowcaseOverview` with
+  application and transport information.
+- `loadOverview()` returns `Future[ShowcaseOverview]`; its short delay makes the
+  frontend loading, success, and error states visible.
+- `streamActivity()` returns `FutureStream[ActivityEvent]`. Each event contains
+  an `ActivityPhase` enum, a message, and elapsed time.
+
+The Svelte page imports those commands from `rpc/commands/showcase` and the
+named contracts from `rpc/types`; it never builds a transport request itself.
+The activity stream is single-use and can be canceled while it is live. Nim
+handles the resulting `ValueError` after an awaited `write`, so cancellation
+stops the producer cleanly. The stream otherwise emits its finite sequence and
+completes normally.
+
+```nim
+proc frameworkInfo*(): ShowcaseOverview {.accessible.}
+proc loadOverview*(): Future[ShowcaseOverview] {.async, accessible.}
+proc streamActivity*(): FutureStream[ActivityEvent] {.accessible.}
+```
+
 ## Add a feature
 
-Treat a feature as one vertical slice: define its RPC contract and commands in
-`backend/features/<feature>/`, then `npm run generate`, this generates the TypeScript
-binding.
-
-### Create a backend feature scaffold
-
-Create a new feature with:
+Treat a feature as one vertical slice: define its RPC contracts in
+`backend/features/<feature>/types.nim` and its accessible commands under
+`commands/`. Then regenerate the TypeScript bindings:
 
 ```sh
 npm run feature some-feature
+npm run generate
 ```
 
-The name must use kebab-case. Nim module names cannot contain hyphens, so the
-generator creates `backend/features/some_feature/` with
-`commands/some_feature.nim`. It provides an accessible `someFeature` echo stub
-and a `SomeFeatureResult` RPC type, then asks whether to run `npm run generate`.
-The command aborts without changes if that generated feature directory already
-exists.
-
-### Backend-to-frontend workflow
-
-Whenever you change backend RPC commands, types, or generation rules, run
-`npm run generate` before working with the corresponding frontend API. This
-keeps `frontend/generated/` aligned with the backend contract and prevents
-stale TypeScript IntelliSense errors.
-
-```mermaid
-flowchart LR
-  subgraph Backend
-    direction TB
-    A[Create feature]
-    B[Run `npm run generate`]
-    A --> B
-  end
-
-  subgraph Frontend
-    direction TB
-    D[Run `npm run dev` and \n use the TypeScript bindings.]
-  end
-
-  B --> D
-```
-
-Keep the contract and commands together below a feature directory. Named RPC
-types can live in `backend/features/greeting/types.nim`:
-
-```nim
-type Greeting* = object
-  message*: string
-```
-
-Commands for that feature live in
-`backend/features/greeting/commands/greeting.nim`:
-
-```nim
-import nimri_rpc
-import ../types
-
-proc greet*(name: string): Greeting {.accessible.} =
-  Greeting(message: "Hello, " & name & "!")
-```
-
-All command files below the same feature are combined into one generated
-frontend module. The feature path determines the namespace, so the command
-above keeps the wire name `greeting.greet` regardless of its Nim filename.
-Commands with the same name in different features remain distinct, such as
-`greeting.greet` and `profile.greet`; duplicate command names inside one
-feature are rejected during compilation.
-
-Call Nim from Svelte:
-
-Import the command and use it like a typed async function:
-
-```html
-<script lang="ts">
-  import { greet } from 'rpc/commands/greeting';
-  import type { Greeting } from 'rpc/types';
-
-  let greeting: Greeting | null = null;
-
-  async function callGreet() {
-    greeting = await greet('Mara');
-  }
-</script>
-
-<button on:click={callGreet}>Call Nim</button>
-<p>{greeting?.message ?? ''}</p>
-```
-
-> [!NOTE]
-> No Magic Strings, No Magic Invokes, No manually using a REST-Api  
-> This feels like developing Qt, Avalonia or Wpf applications
+Feature names use kebab-case. The scaffold creates an underscore-separated Nim
+directory and asks whether to generate bindings. All command files below one
+feature form a generated frontend module; the feature path is also its RPC
+namespace. Keep frontend code on the generated APIs such as
+`rpc/commands/showcase` and `rpc/types`.
 
 ## Development commands
 
 ```sh
 npm run feature some-feature # Create a backend feature scaffold
-npm run generate   # Generate Frontend Data
-npm run dev        # Start the development workflow
-npm run build      # Package a runnable Electron app below bin/
+npm run generate             # Regenerate frontend RPC bindings
+npm run dev                  # Start the development workflow
+npm run build                # Package a runnable Electron app below bin/
 ```
 
 The same commands work on Linux and Windows, with builds produced natively on
 their target platform. The explicit `npm run run` alias is also available,
 along with `npm run serialize` and `npm test`.
-
-Most of the time you need propably `generate` and `dev`.
 
 ## Supported RPC capabilities
 
@@ -165,70 +110,6 @@ Most of the time you need propably `generate` and `dev`.
   `Future[T]`; generated frontend functions return promises.
 - Streaming commands returning `FutureStream[T]`; generated frontend functions
   return a lazy `NimriStream<T>` that works with `for await...of`.
-
-## Stream command results
-
-Use `std/asyncstreams.FutureStream[T]` when one command needs to deliver values
-over time. Return the stream directly rather than wrapping it in `Future`:
-
-```nim
-import std/[asyncdispatch, asyncstreams]
-import nimri_rpc
-
-type Update* = object
-  message*: string
-
-proc produceUpdates(stream: FutureStream[Update]): Future[void] {.async.} =
-  try:
-    await stream.write(Update(message: "Starting"))
-    await stream.write(Update(message: "Finished"))
-    stream.complete()
-  except ValueError:
-    # The consumer canceled or its window disconnected.
-    discard
-  except CatchableError as exception:
-    stream.fail(exception)
-
-proc updates*(): FutureStream[Update] {.accessible.} =
-  result = newFutureStream[Update]("updates")
-  asyncCheck produceUpdates(result)
-```
-
-The generated Svelte binding starts the backend command only when the first
-value is requested:
-
-```html
-<script lang="ts">
-  import { updates } from 'rpc/commands/activity';
-
-  async function readUpdates() {
-    try {
-      for await (const update of updates()) {
-        console.log(update.message);
-      }
-    } catch (reason) {
-      console.error('Update stream failed', reason);
-    }
-  }
-</script>
-```
-
-Each `NimriStream<T>` is single-use and supports one consumer. It has no replay,
-fan-out, or backend backpressure. Breaking out of `for await...of` calls
-`return()` and cancels the backend stream. A stream can also be canceled
-explicitly:
-
-```ts
-const stream = updates();
-const first = await stream.next();
-await stream.cancel();
-```
-
-Cancellation is cooperative. Nim closes the underlying `FutureStream`, so later
-producer `write` futures fail with `ValueError`; producers should await writes
-and stop when that happens. Producer exceptions, failed streams, and JSON
-serialization errors reject the next frontend read. A normal stream completion
-returns `{ done: true }` from `next()`.
 
 ## Limitations
 

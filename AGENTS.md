@@ -1,24 +1,15 @@
 # Nim–Svelte Desktop Framework
 
-> **TL;DR:** An Electron desktop application microframework with a Svelte frontend and a Nim sidecar backend, connected by generated, type-safe RPC bindings over standard IO. Inspired by Tauri.
+Electron + Svelte frontend with a Nim 2+ sidecar and generated typed RPC.
 
-- You are a Nim (>2.0) programming expert with years of expierience.
-- Use Nim >2.0 syntax and features
-- Comments:
-  - Write all code comments in English
-  - Don't remove comments that are marked as `CRITCAL:`
-  - If you fix something use a short sentence with `FIX:`
-- Don't make silent optimizations
-- Don't add new hidden features when not explictly metioned.
-- Prefer enums over magic strings (If possible)
-- Priorize event based solution over costly while loops (if possible)
-- Don't create static helper functions only to justify that the access is "easy" with it, think in long term, other people might test your code.
-- If you need a paragraph-long comment to justify why your specific workaraound is "OK", the code is just wrong => fix the code
-- Don't create new tests if not mentioned, and don't run `npm test` during app developement.
+- Use Nim 2+ syntax and features.
+- Write code comments in English. Never remove `CRITICAL:` or `CRITCAL:` comments. Use short `FIX:` comments for fixes.
+- Do not add unrequested features or silent optimizations.
+- Prefer enums to magic strings and events to polling loops when practical.
+- Do not add static helpers merely for convenient access; keep code testable.
+- Redesign workarounds that require paragraph-long justification.
+- Do not add tests unless asked. Never run `npm test` during app development.
 
-# CRITICAL
-- NEVER READ THE following directories. Exclude it from ripgrep unless you need to change, improve or fix the nimri framework behavior OR you need an information that you can not verifiy by user's question, which is related to the nimri framework:
-  - nim/backend/core/
-  - frontend/node_modules/
-  - .nimchache/
-  - tests/
+## CRITICAL
+
+Broad searches must exclude `nim/backend/core/`, `frontend/node_modules/`, `.nimchache/`, and `tests/`. Read them only for Nimri framework work or when a task-relevant fact cannot be verified elsewhere.
